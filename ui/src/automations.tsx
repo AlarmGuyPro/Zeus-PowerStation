@@ -692,7 +692,7 @@ function ActionPicker({
   );
 }
 
-function NumField({
+export function NumField({
   label,
   value,
   onChange,

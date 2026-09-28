@@ -5,12 +5,13 @@ import { BackendError, HealthLabel, Loading, Notice, channelLabel, type StatusSt
 import { FindDevices } from "./discovery";
 import { ScenesSettings } from "./scenes";
 import { AutomationsSettings } from "./automations";
+import { ReadingsSettings } from "./readings";
 import { COLUMN_CHOICES, normalize, useLayout } from "./layout";
 import { c } from "./styles";
 
 const message = (err: unknown) => (err instanceof ApiError ? err.message : String(err));
 
-export type SetupSection = "devices" | "scenes" | "automations" | "layout";
+export type SetupSection = "devices" | "scenes" | "automations" | "readings" | "layout";
 
 /** Setup, behind the gear: devices, scenes, automations and the card layout. */
 export function SetupView({
@@ -49,6 +50,7 @@ export function SetupView({
           <p className={c("hint")}>Add a device first.</p>
         ))}
       {section === "automations" && <AutomationsSettings client={client} status={status} />}
+      {section === "readings" && <ReadingsSettings client={client} status={status} />}
       {section === "layout" && data && <LayoutSettings client={client} status={status} onArrange={onArrange} />}
       {data && <p className={c("hint")} style={{ marginTop: 12 }}>PowerStation v{data.version}</p>}
     </>

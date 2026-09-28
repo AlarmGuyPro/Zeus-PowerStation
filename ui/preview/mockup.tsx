@@ -6,8 +6,9 @@ import { createRoot } from "react-dom/client";
 import { useEffect } from "react";
 import {
   BANDS, createClient, type Action, type AutomationState, type ChannelState, type DeviceView, type DiscoveryView,
-  type EndAction, type Layout, type Rule, type Scene, type SceneTarget, type ZeusPluginApi,
+  type EndAction, type Layout, type ReadingAlert, type ReadingEvent, type ReadingsView, type Rule, type Scene, type SceneTarget, type ZeusPluginApi,
 } from "../src/api";
+import { MAINS_PRESETS } from "../src/readings";
 import { PowerStationPanel } from "../src/PowerStationPanel";
 import { IdlePillPanel } from "../src/automations";
 
@@ -220,6 +221,111 @@ function applyPower(ch: ChannelState) {
 }
 
 
+// ---- pretend readings: normal ranges, alerts and the event log
+const RATED: Record<string, number | null> = { Pro4PM: 16, PlugUS: 15, Ogemray25A: 25, ShellyEM: 50, DimmerG3: null, WallDimmer: null };
+const rd = {
+  view: { mains: { ...MAINS_PRESETS["120"] }, holdSeconds: 5, events: [] as ReadingEvent[] } as ReadingsView,
+  mainsV: 121.4,
+  ampOverload: false,
+  psuTripped: false,
+  custom: new Map<string, { warnA?: number | null; maxA?: number | null; minOnA?: number | null }>(),
+  firstSeen: new Map<string, number>(),
+  open: new Map<string, ReadingEvent>(),
+};
+function exampleEvents(): ReadingEvent[] {
+  const at = (h: number) => new Date(Date.now() - h * 3600000).toISOString();
+  return [
+    { id: "e3", deviceId: RACK, channelKey: "switch:3", label: "Rotator", kind: "device", level: "limit", text: "device reported overpower and switched off", start: at(2.2), end: at(2.2) },
+    { id: "e2", deviceId: RACK, channelKey: "switch:0", label: "Amplifier", kind: "currentHigh", level: "warn", text: "high current, peak 13.2 A (warn above 12.8 A)", peak: 13.2, start: at(5.1), end: new Date(Date.now() - 5.1 * 3600000 + 40000).toISOString() },
+    { id: "e1", deviceId: "shellyem-c45bbe6a1f22", channelKey: "emeter:0", label: "Leg A", kind: "voltageLow", level: "warn", text: "low voltage, lowest 111.8 V (normal from 114 V)", peak: 111.8, start: at(20), end: new Date(Date.now() - 20 * 3600000 + 4 * 60000).toISOString() },
+  ];
+}
+rd.view.events = exampleEvents();
+rd.custom.set(`${RACK}|switch:1`, { warnA: 1.0, maxA: 1.5, minOnA: 0.2 });
+function limitsFor(d: DeviceView, ch: ChannelState) {
+  const rated = ch.kind === "Meter" || ch.metered ? RATED[d.app ?? ""] ?? null : null;
+  const c = rd.custom.get(`${d.deviceId}|${ch.key}`);
+  return {
+    ratedA: rated,
+    warnA: c && "warnA" in c ? c.warnA ?? null : rated ? +(rated * 0.8).toFixed(1) : null,
+    maxA: c && "maxA" in c ? c.maxA ?? null : rated,
+    minOnA: c?.minOnA ?? null,
+    custom: !!c,
+  };
+}
+/** Applies the pretend supply and faults, then works out alerts and events. */
+function measure(devices: DeviceView[]) {
+  const m = rd.view.mains;
+  const now = Date.now();
+  const seen = new Set<string>();
+  let mainsAlert: ReadingAlert | null = null;
+  let mainsCount = 0;
+  for (const d of devices) {
+    for (const ch of d.status.channels) if (ch.metered) ch.limits = limitsFor(d, ch);
+    if (d.status.health !== "Online") continue;
+    for (const ch of d.status.channels) {
+      if (!ch.metered) continue;
+      const jitter = ch.kind === "Meter" ? (ch.index ? -0.5 : 0) : 0;
+      ch.voltageV = +(rd.mainsV + jitter).toFixed(1);
+      if (ch.name === "Amplifier" && ch.on) { ch.currentA = rd.ampOverload ? 13.9 : 2.57; ch.powerW = +(ch.currentA * ch.voltageV * 0.98).toFixed(1); }
+      if (ch.name === "Station PSU" && ch.on) { ch.currentA = rd.psuTripped ? 0.02 : 0.48; ch.powerW = rd.psuTripped ? 1.2 : 58.2; }
+      ch.limits = limitsFor(d, ch);
+      const checks: [ReadingAlert["kind"], "warn" | "limit", number, number][] = [];
+      const v = ch.voltageV;
+      if (v < m.limitLowV) checks.push(["voltageLow", "limit", v, m.limitLowV]);
+      else if (v < m.normalLowV) checks.push(["voltageLow", "warn", v, m.normalLowV]);
+      if (v > m.limitHighV) checks.push(["voltageHigh", "limit", v, m.limitHighV]);
+      else if (v > m.normalHighV) checks.push(["voltageHigh", "warn", v, m.normalHighV]);
+      const a = ch.currentA ?? 0, l = ch.limits;
+      if (l.maxA != null && a > l.maxA) checks.push(["currentHigh", "limit", a, l.maxA]);
+      else if (l.warnA != null && a > l.warnA) checks.push(["currentHigh", "warn", a, l.warnA]);
+      if (l.minOnA != null && ch.on && a < l.minOnA) checks.push(["currentLow", "warn", a, l.minOnA]);
+      ch.alerts = [];
+      for (const [kind, level, value, threshold] of checks) {
+        const volt = kind.startsWith("voltage");
+        // Voltage is the station's supply: one event for all outputs; current is per output.
+        const key = volt ? `mains|${kind}` : `${d.deviceId}|${ch.key}|${kind}`;
+        seen.add(key);
+        if (!rd.firstSeen.has(key)) rd.firstSeen.set(key, now);
+        const since = rd.firstSeen.get(key)!;
+        if (now - since < rd.view.holdSeconds * 1000) continue;
+        const alert = { kind, level, value, threshold, since: new Date(since).toISOString() };
+        ch.alerts.push(alert);
+        if (volt) {
+          mainsCount++;
+          const low = kind === "voltageLow";
+          if (!mainsAlert || (low ? value < mainsAlert.value : value > mainsAlert.value)) mainsAlert = alert;
+        }
+        const label = volt ? "Mains" : channelLabelOf(ch);
+        const unit = volt ? "V" : "A";
+        const low = kind.endsWith("Low");
+        let ev = rd.open.get(key);
+        if (!ev) {
+          ev = { id: key + since, deviceId: volt ? "" : d.deviceId, channelKey: volt ? "" : ch.key, label, kind, level, text: "", peak: value, start: new Date(since).toISOString(), end: null };
+          rd.open.set(key, ev);
+          rd.view.events.unshift(ev);
+        }
+        ev.peak = low ? Math.min(ev.peak ?? value, value) : Math.max(ev.peak ?? value, value);
+        if (level === "limit") ev.level = "limit";
+        const m2 = rd.view.mains;
+        const what = { voltageHigh: "high voltage", voltageLow: "low voltage", currentHigh: "high current", currentLow: "low current while on" }[kind];
+        const bound = kind === "voltageLow" ? (ev.level === "limit" ? `below the ${m2.limitLowV} V limit` : `normal from ${m2.normalLowV} V`)
+          : kind === "voltageHigh" ? (ev.level === "limit" ? `above the ${m2.limitHighV} V limit` : `normal to ${m2.normalHighV} V`)
+          : kind === "currentLow" ? `expected at least ${threshold} A`
+          : level === "limit" ? `limit ${threshold} A` : `warn above ${threshold} A`;
+        ev.text = `${what}, ${low ? "lowest" : "peak"} ${ev.peak} ${unit} (${bound})`;
+      }
+    }
+  }
+  rd.view.mainsNow = { voltageV: rd.mainsV, alert: mainsAlert, outputs: mainsCount };
+  for (const key of [...rd.firstSeen.keys()]) if (!seen.has(key)) {
+    rd.firstSeen.delete(key);
+    const ev = rd.open.get(key);
+    if (ev) { ev.end = new Date().toISOString(); rd.open.delete(key); }
+  }
+}
+const channelLabelOf = (ch: ChannelState) => ch.name ?? `${ch.kind === "Meter" ? "Meter" : "Output"} ${ch.index + 1}`;
+
 // ---- pretend automation engine: a small stand-in for the backend rules runner
 const BAND_EDGES: Record<string, [number, number]> = {
   "160m": [1.8, 2.0], "80m": [3.5, 4.0], "60m": [5.33, 5.41], "40m": [7.0, 7.3], "30m": [10.1, 10.15], "20m": [14.0, 14.35],
@@ -425,9 +531,20 @@ const api: ZeusPluginApi = {
     await new Promise((r) => setTimeout(r, 180));
     if (state.scenario === "down") throw new TypeError("Failed to fetch");
     const devices = state.devices;
-    if (method === "GET" && path === "/status")
+    if (method === "GET" && path === "/status") {
+      measure(devices);
       return json({ version: "0.5.0", pollIntervalMs: 1000, devices: clone(devices), scenes: clone(state.scenes), rules: clone(state.rules),
-        automation: automationView(), layout: state.scenario === "empty" ? null : clone(state.layout) });
+        automation: automationView(), readings: clone(rd.view), layout: state.scenario === "empty" ? null : clone(state.layout) });
+    }
+    if (path === "/readings" && method === "PUT") {
+      const mm = body?.mains;
+      if (mm && !(mm.limitLowV <= mm.normalLowV && mm.normalLowV < mm.normalHighV && mm.normalHighV <= mm.limitHighV))
+        return fail("Voltages must go limit low ≤ normal from < normal to ≤ limit high.");
+      if (mm) rd.view.mains = mm;
+      if (typeof body?.holdSeconds === "number") rd.view.holdSeconds = body.holdSeconds;
+      return json(rd.view);
+    }
+    if (path === "/readings/events" && method === "DELETE") { rd.view.events = rd.view.events.filter((e) => !e.end); return json(rd.view); }
     if (method !== "GET" && !path.startsWith("/discovery") && path !== "/layout") activity("PowerStation");
 
     if (path === "/automation" && method === "PUT") { if (typeof body?.paused === "boolean") { eng.paused = body.paused; log(body.paused ? "Automations paused" : "Automations running"); } return json(automationView()); }
@@ -543,6 +660,12 @@ const api: ZeusPluginApi = {
         d.hasCredential = true; d.authRequired = true;
         if (d.status.health === "Unauthorized") d.status = { health: "Online", channels: [sw(0, "Soldering station", false, 48)] };
       }
+      if (body.limits) for (const [k, v] of Object.entries(body.limits)) {
+        const key = `${d.deviceId}|${k}`;
+        if (v === null) { rd.custom.delete(key); continue; }
+        rd.custom.set(key, { ...rd.custom.get(key), ...(v as object) });
+      }
+      if (body.limits) measure(state.devices);
       if (body.safetyMinutes) for (const [k, v] of Object.entries(body.safetyMinutes)) {
         const ch = d.status.channels.find((c) => c.key === k); if (ch) ch.safetyMinutes = (v as number) || null;
       }
@@ -607,6 +730,14 @@ function PretendZeus() {
         <button className="mk-small" onClick={() => zeus.nearIdle()}>Skip to 1 min before idle</button>
         <button className="mk-small" onClick={() => zeus.elevenPm()}>Pretend it's 23:00</button>
       </div>
+      <div className="mk-zeus-row">
+        <span className="mk-zeus-label">Mains {rd.mainsV} V</span>
+        <button className="mk-small" aria-pressed={rd.mainsV === 108.6} onClick={() => { rd.mainsV = 108.6; }}>Sag to 108.6 V</button>
+        <button className="mk-small" aria-pressed={rd.mainsV === 126.6} onClick={() => { rd.mainsV = 126.6; }}>Rise to 126.6 V</button>
+        <button className="mk-small" aria-pressed={rd.mainsV === 121.4} onClick={() => { rd.mainsV = 121.4; }}>Normal 121.4 V</button>
+        <button className="mk-small" aria-pressed={rd.ampOverload} onClick={() => { rd.ampOverload = !rd.ampOverload; }}>Amplifier draws 13.9 A</button>
+        <button className="mk-small" aria-pressed={rd.psuTripped} onClick={() => { rd.psuTripped = !rd.psuTripped; }}>Station PSU fuse blown</button>
+      </div>
     </div>
   );
 }
@@ -626,6 +757,10 @@ function App() {
     Object.assign(eng, { paused: false, lastActivity: Date.now(), idleFiresAt: Date.now() + 42 * 60000, idleState: "active", pending: [], txQueue: [], log: [] });
     eng.radio = { connected: true, frequencyHz: 14.074e6, band: "20m", mode: "DIGU", mox: false };
     eng.active.clear(); eng.timers.clear(); eng.snapshots.clear();
+    Object.assign(rd, { mainsV: 121.4, ampOverload: false, psuTripped: false });
+    rd.custom.clear(); rd.firstSeen.clear(); rd.open.clear();
+    rd.view = { mains: { ...MAINS_PRESETS["120"] }, holdSeconds: 5, events: exampleEvents() };
+    rd.custom.set(`${RACK}|switch:1`, { warnA: 1.0, maxA: 1.5, minOnA: 0.2 });
     setScenario(s);
     setEpoch((e) => e + 1);
   };

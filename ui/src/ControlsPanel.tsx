@@ -6,6 +6,13 @@ import { DeviceGrid, useLayout } from "./layout";
 import { ScenesStrip } from "./scenes";
 import { c } from "./styles";
 
+const ALERT_TEXT: Record<string, string> = {
+  voltageHigh: "High voltage",
+  voltageLow: "Low voltage",
+  currentHigh: "High current",
+  currentLow: "Low current",
+};
+
 const ERROR_TEXT: Record<string, string> = {
   overpower: "Overpower",
   overtemp: "Overheated",
@@ -48,6 +55,7 @@ export function StatusView({
   return (
     <>
       {error && <Notice tone="warn">Lost contact with PowerStation. Showing the last known state.</Notice>}
+      <MainsBanner status={status} />
       <ScenesStrip client={client} status={status} />
       {arranging && (
         <div className={c("notice", "notice--ok", "row")} role="status">
@@ -71,6 +79,23 @@ export function StatusView({
         )}
       />
     </>
+  );
+}
+
+function MainsBanner({ status }: { status: StatusState }) {
+  const now = status.data?.readings?.mainsNow;
+  const a = now?.alert;
+  if (!now || !a) return null;
+  const low = a.kind === "voltageLow";
+  return (
+    <div className={c("mains-banner", a.level === "limit" && "mains-banner--limit")} role="status">
+      <strong>{low ? "Low" : "High"} mains voltage: {fmt.volts(a.value)}</strong>
+      <span>
+        {a.level === "limit" ? (low ? "below the limit" : "above the limit") : low ? "below normal" : "above normal"} of{" "}
+        {fmt.volts(a.threshold)} since {new Date(a.since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}, seen on{" "}
+        {now.outputs} output{now.outputs === 1 ? "" : "s"}.
+      </span>
+    </div>
   );
 }
 
@@ -172,17 +197,35 @@ function ChannelTile({
   const errors = channel.errors.map((e) => ERROR_TEXT[e] ?? e);
   const uncalibrated = channel.flags.includes("uncalibrated");
 
+  const alerts = channel.alerts ?? [];
+  const tone = (kinds: string[]) => {
+    const a = alerts.filter((x) => kinds.includes(x.kind));
+    return a.some((x) => x.level === "limit") ? "reading--limit" : a.length ? "reading--warn" : null;
+  };
   const readings = channel.metered && (
     <div className={c("meter")} aria-label={`${label} readings`}>
       {channel.powerW != null && <span className={c("meter-main")}>{fmt.watts(channel.powerW)}</span>}
-      {channel.voltageV != null && <span>{fmt.volts(channel.voltageV)}</span>}
-      {channel.currentA != null && <span>{fmt.amps(channel.currentA)}</span>}
+      {channel.voltageV != null && <span className={c(tone(["voltageHigh", "voltageLow"]))}>{fmt.volts(channel.voltageV)}</span>}
+      {channel.currentA != null && <span className={c(tone(["currentHigh", "currentLow"]))}>{fmt.amps(channel.currentA)}</span>}
       {channel.energyWh != null && <span>{fmt.energy(channel.energyWh)}</span>}
       {channel.temperatureC != null && <span>{fmt.temp(channel.temperatureC)}</span>}
     </div>
   );
-  const badges = (errors.length > 0 || uncalibrated) && (
+  // Voltage is one supply for the whole station: it's colored here and reported once in the mains banner.
+  const currentAlerts = alerts.filter((a) => a.kind.startsWith("current"));
+  const badges = (errors.length > 0 || uncalibrated || currentAlerts.length > 0) && (
     <div className={c("row")}>
+      {currentAlerts.map((a) => (
+        <span
+          key={a.kind}
+          className={c("badge", a.level === "limit" && "badge--danger")}
+          title={`${ALERT_TEXT[a.kind]}: ${a.kind.startsWith("voltage") ? fmt.volts(a.value) : fmt.amps(a.value)}, ${
+            a.kind.endsWith("High") ? "above" : "below"
+          } ${a.kind.startsWith("voltage") ? fmt.volts(a.threshold) : fmt.amps(a.threshold)} since ${new Date(a.since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
+        >
+          {ALERT_TEXT[a.kind]}
+        </span>
+      ))}
       {errors.map((e) => (
         <span key={e} className={c("badge", "badge--danger")}>
           {e}

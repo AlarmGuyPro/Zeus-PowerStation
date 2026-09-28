@@ -33,6 +33,65 @@ export interface ChannelState {
   safetyMinutes?: number | null;
   /** When the safety timer would turn the output off if Zeus stopped renewing it. */
   safetyEndsAt?: string | null;
+  /** Current limits in effect for this output (model rating unless the operator set their own). */
+  limits?: CurrentLimits | null;
+  /** Readings outside the normal range right now. */
+  alerts?: ReadingAlert[];
+}
+
+export interface CurrentLimits {
+  /** The output's rated current from the Shelly spec, if known. */
+  ratedA?: number | null;
+  /** Warn above this (default 80% of rating: the continuous-load rule of thumb). */
+  warnA?: number | null;
+  /** Alert above this (default: the rating). */
+  maxA?: number | null;
+  /** Optional: when the output is on, warn if the load draws less than this (tripped breaker, blown fuse, load off). */
+  minOnA?: number | null;
+  custom: boolean;
+}
+
+export type ReadingKind = "voltageHigh" | "voltageLow" | "currentHigh" | "currentLow";
+
+export interface ReadingAlert {
+  kind: ReadingKind;
+  /** warn = outside the normal range; limit = outside the hard limit. */
+  level: "warn" | "limit";
+  value: number;
+  /** The threshold that was crossed. */
+  threshold: number;
+  since: string;
+}
+
+export interface MainsProfile {
+  preset: "120" | "230" | "custom";
+  normalLowV: number;
+  normalHighV: number;
+  limitLowV: number;
+  limitHighV: number;
+}
+
+export interface ReadingEvent {
+  id: string;
+  deviceId: string;
+  channelKey: string;
+  label: string;
+  kind: ReadingKind | "device";
+  level: "warn" | "limit";
+  text: string;
+  /** Worst value seen during the event. */
+  peak?: number | null;
+  start: string;
+  end?: string | null;
+}
+
+export interface ReadingsView {
+  mains: MainsProfile;
+  /** Mains is one supply, so voltage is reported once for the station rather than per output. */
+  mainsNow?: { voltageV: number; alert?: ReadingAlert | null; outputs: number } | null;
+  /** A reading must stay out of range this long before it counts (ignores switch-on inrush). */
+  holdSeconds: number;
+  events: ReadingEvent[];
 }
 
 export interface DeviceView {
@@ -97,6 +156,7 @@ export interface StatusResponse {
   layout?: Layout | null;
   rules?: Rule[];
   automation?: AutomationState | null;
+  readings?: ReadingsView | null;
 }
 
 // ---------------------------------------------------------------- automations
@@ -274,6 +334,8 @@ export function createClient(api: ZeusPluginApi) {
     imHere: () => call<AutomationState>("POST", "/automation/activity"),
     /** Push the idle timeout out by the idle rule's extend step. */
     extendIdle: () => call<AutomationState>("POST", "/automation/extend"),
+    saveReadings: (patch: { mains?: MainsProfile; holdSeconds?: number }) => call<ReadingsView>("PUT", "/readings", patch),
+    clearReadingEvents: () => call<ReadingsView>("DELETE", "/readings/events"),
     status: () => call<StatusResponse>("GET", "/status"),
     probe: (host: string) => call<ProbeResponse>("POST", "/devices/probe", { host }),
     addDevice: (host: string, name?: string, password?: string) =>
@@ -287,6 +349,8 @@ export function createClient(api: ZeusPluginApi) {
         clearPassword?: boolean;
         channelNames?: Record<string, string | null>;
         safetyMinutes?: Record<string, number | null>;
+        /** Per output; null resets to the model rating. */
+        limits?: Record<string, { warnA?: number | null; maxA?: number | null; minOnA?: number | null } | null>;
       },
     ) => call<DeviceView>("PATCH", `/devices/${id(deviceId)}`, patch),
     removeDevice: (deviceId: string) => call<{ removed: string }>("DELETE", `/devices/${id(deviceId)}`),

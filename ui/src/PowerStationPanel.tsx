@@ -14,6 +14,7 @@ const SECTIONS: { id: SetupSection; label: string }[] = [
   { id: "devices", label: "Devices" },
   { id: "scenes", label: "Scenes" },
   { id: "automations", label: "Automations" },
+  { id: "readings", label: "Readings" },
   { id: "layout", label: "Layout" },
 ];
 
@@ -64,6 +65,8 @@ export function PowerStationPanel({ client, initialSetup = false }: { client: Po
   const totalW = online.reduce((sum, ch) => sum + (ch.kind === "Meter" ? 0 : ch.powerW ?? 0), 0);
   const attention = data?.devices.filter((d) => d.status.health !== "Online" && d.status.health !== "Pending").length ?? 0;
   const auto = data?.automation;
+  const outOfRange = online.filter((ch) => ch.alerts?.some((a) => a.kind.startsWith("current"))).length;
+  const mainsAlert = data?.readings?.mainsNow?.alert;
 
   return (
     <PanelRoot label="PowerStation">
@@ -77,6 +80,17 @@ export function PowerStationPanel({ client, initialSetup = false }: { client: Po
                 {data.devices.length} device{data.devices.length === 1 ? "" : "s"}
                 {metered ? ` · ${fmt.watts(totalW)}` : ""}
                 {attention > 0 ? ` · ${attention} need${attention === 1 ? "s" : ""} attention` : ""}
+                {mainsAlert && (
+                  <span className={c("summary-warn")}>
+                    {" · "}mains {mainsAlert.kind === "voltageLow" ? "low" : "high"}
+                  </span>
+                )}
+                {outOfRange > 0 && (
+                  <span className={c("summary-warn")}>
+                    {" · "}
+                    {outOfRange} output{outOfRange === 1 ? "" : "s"} over or under current
+                  </span>
+                )}
               </>
             )}
             {auto?.paused && <span className={c("badge", "badge--muted")} style={{ marginLeft: 8 }}>Automations paused</span>}
