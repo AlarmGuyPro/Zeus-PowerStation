@@ -39,12 +39,12 @@ ${e("title")} { font-size: 13px; font-weight: 500; color: var(--fg-0); margin: 0
 ${e("summary")} { color: var(--fg-2); font-family: var(--font-mono); font-size: 11px; }
 
 ${e("device")} { border: 1px solid var(--panel-border); border-radius: var(--r-md); background: var(--bg-2); margin: 0 0 10px; }
-${e("device-head")} { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
-${e("device-name")} { font-weight: 500; color: var(--fg-0); margin: 0; font-size: 12px; overflow-wrap: anywhere; }
-${e("device-meta")} { color: var(--fg-3); font-size: 10.5px; font-family: var(--font-mono); overflow-wrap: anywhere; }
+${e("device-head")} { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); min-width: 0; }
+${e("device-name")} { font-weight: 500; color: var(--fg-0); margin: 0; font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+${e("device-meta")} { color: var(--fg-3); font-size: 10.5px; font-family: var(--font-mono); min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 ${e("device-body")} { padding: 8px; }
 
-${e("health")} { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--fg-2); margin-left: auto; }
+${e("health")} { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--fg-2); margin-left: auto; flex: none; white-space: nowrap; }
 ${e("health")}::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); flex: none; }
 ${e("health--online")}::before { background: var(--ok); }
 ${e("health--warn")}::before { background: var(--amber); }
@@ -146,20 +146,25 @@ ${e("seg-label")} { font-size: 11px; color: var(--fg-3); padding: 0 6px 0 4px; }
 ${e("seg-btn")} { min-width: 30px; min-height: 24px; padding: 1px 8px; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--fg-2); cursor: pointer; font-size: 11px; }
 ${e("seg-btn")}[aria-checked="true"] { background: var(--bg-3); color: var(--fg-0); box-shadow: inset 0 -2px 0 var(--accent); }
 
+${e("snap")} { display: grid; gap: 10px; align-items: stretch; }
+${e("snap--arranging")} { padding: 4px; margin: -4px; border-radius: var(--r-md); outline: 1px dashed var(--line-strong); }
+${e("cell")} { display: flex; min-width: 0; }
+${e("cell")} > ${e("device")} { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+${e("cell-end")} { display: grid; place-items: center; min-height: 60px; border: 1px dashed var(--line-strong); border-radius: var(--r-md); color: var(--fg-3); font-size: 11px; }
+${e("cell-end--active")} { border-color: var(--accent); color: var(--fg-1); }
 ${e("columns")} { display: grid; gap: 10px; align-items: start; }
 ${e("column")} { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 40px; border-radius: var(--r-md); }
 ${e("column--arranging")} { outline: 1px dashed var(--line-strong); outline-offset: 3px; padding-bottom: 24px; }
 ${e("column--drop")} { outline-color: var(--accent); }
 ${e("column-empty")} { border: 1px dashed var(--line-strong); border-radius: var(--r-md); padding: 18px 8px; text-align: center; color: var(--fg-3); font-size: 11px; }
 ${e("flow")} { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); align-items: start; }
-${e("cell")} { min-width: 0; }
 ${e("cell")} > ${e("device")} { margin: 0; }
 ${e("cell--arranging")} { cursor: grab; }
 ${e("cell--arranging")} > ${e("device")} { border-style: dashed; }
 ${e("cell--dragging")} { opacity: 0.45; }
-${e("cell--drop-before")} { box-shadow: 0 -3px 0 var(--accent); border-radius: var(--r-md); }
+${e("cell--drop-before")} { box-shadow: -4px 0 0 var(--accent); border-radius: var(--r-md); }
 ${e("grip")} { color: var(--fg-3); font-size: 12px; line-height: 1; }
-${e("move")} { display: inline-flex; gap: 2px; margin-left: auto; }
+${e("move")} { display: inline-flex; gap: 2px; margin-left: auto; flex: none; }
 ${e("move-btn")} { min-width: 24px; min-height: 24px; border: 1px solid var(--line-strong); border-radius: var(--r-xs); background: var(--bg-1); color: var(--fg-1); cursor: pointer; font-size: 12px; line-height: 1; }
 ${e("move-btn")}:disabled { opacity: 0.35; cursor: default; }
 

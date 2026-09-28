@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { ApiError, type ChannelState, type DeviceView, type PowerStationClient } from "./api";
 import { BackendError, HealthLabel, Loading, Notice, channelLabel, fmt, type StatusState } from "./shared";
-import { DeviceGrid, LayoutToolbar, reflow, useLayout } from "./layout";
+import { DeviceGrid, LayoutToolbar, normalize, useLayout } from "./layout";
 import { ScenesStrip } from "./scenes";
 import { c } from "./styles";
 
@@ -49,12 +49,12 @@ export function StatusView({
       <LayoutToolbar
         layout={layout}
         arranging={arranging}
-        onColumns={(n) => save({ columns: n, order: reflow(layout.order.length ? layout.order : [data.devices.map((d) => d.deviceId)], n) })}
+        onColumns={(n) => save({ columns: n, order: normalize({ columns: 1, order: [layout.order.flat()] }, data.devices) })}
         onArrange={setArranging}
       />
       {arranging && (
         <p className={c("hint")} style={{ margin: "0 0 8px" }}>
-          Drag a card to a new spot, or use its arrows. Choose Done arranging when you're finished.
+          Drag a card onto another to take its place, or use the arrows. Choose Done arranging when you're finished.
         </p>
       )}
       {layoutError && <Notice tone="warn">{layoutError}</Notice>}

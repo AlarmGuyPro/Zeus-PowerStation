@@ -9,7 +9,8 @@ import { c } from "./styles";
 
 export const COLUMN_CHOICES = [0, 1, 2, 3, 4] as const;
 /** Narrowest a column may get before the grid drops a column. */
-const MIN_COLUMN_PX = 210;
+const MIN_COLUMN_PX = 230;
+const GAP_PX = 10;
 
 /**
  * Fits saved order to the devices that exist now: unknown IDs are dropped
@@ -33,14 +34,6 @@ export function normalize(layout: Layout, devices: DeviceView[]): string[][] {
     cols[shortest].push(d.deviceId);
   }
   return cols;
-}
-
-/** Re-deals a layout into a different number of columns, keeping reading order. */
-function reflow(order: string[][], columns: number): string[][] {
-  const flat = flatten(order);
-  const n = Math.max(1, columns || 1);
-  const perCol = Math.ceil(flat.length / n);
-  return Array.from({ length: n }, (_, i) => flat.slice(i * perCol, (i + 1) * perCol));
 }
 
 /** Column-major reading order. */
@@ -133,6 +126,13 @@ export function LayoutToolbar({
 
 type Move = "up" | "down" | "left" | "right";
 
+/**
+ * Cards snap to a grid of equal cells that fill the panel's width. Order is
+ * left to right, top to bottom. Every card in a row is the same height.
+ * Auto picks as many columns as fit (never more than there are devices);
+ * a number fixes the column count, reduced only when the panel is too
+ * narrow to hold it.
+ */
 export function DeviceGrid({
   devices,
   layout,
@@ -148,140 +148,117 @@ export function DeviceGrid({
 }) {
   const { ref, width } = useWidth();
   const [dragId, setDragId] = useState<string | null>(null);
-  const [dropAt, setDropAt] = useState<{ col: number; before: string | null } | null>(null);
+  const [dropBefore, setDropBefore] = useState<string | null | undefined>(undefined);
   const byId = new Map(devices.map((d) => [d.deviceId, d]));
 
+  const flat = normalize({ columns: 1, order: [flatten(layout.order)] }, devices)[0];
+  const fits = width > 0 ? Math.max(1, Math.floor((width + GAP_PX) / (MIN_COLUMN_PX + GAP_PX))) : 3;
   const auto = layout.columns === 0;
-  const fits = width > 0 ? Math.max(1, Math.floor((width + 10) / MIN_COLUMN_PX)) : 4;
-  const order = normalize(auto ? { columns: 1, order: [flatten(layout.order)] } : layout, devices);
+  const cols = auto ? Math.max(1, Math.min(fits, flat.length)) : Math.min(layout.columns, fits);
   const squeezed = !auto && fits < layout.columns;
 
-  const commit = (next: string[][]) => onSave({ columns: layout.columns, order: next });
+  const commit = (next: string[]) => onSave({ columns: layout.columns, order: [next] });
 
   function move(id: string, dir: Move) {
-    const next = order.map((col) => [...col]);
-    const ci = next.findIndex((col) => col.includes(id));
-    const ri = next[ci].indexOf(id);
-    if (dir === "up" && ri > 0) [next[ci][ri - 1], next[ci][ri]] = [next[ci][ri], next[ci][ri - 1]];
-    else if (dir === "down" && ri < next[ci].length - 1) [next[ci][ri + 1], next[ci][ri]] = [next[ci][ri], next[ci][ri + 1]];
-    else if ((dir === "left" && ci > 0) || (dir === "right" && ci < next.length - 1)) {
-      const to = ci + (dir === "left" ? -1 : 1);
-      next[ci].splice(ri, 1);
-      next[to].splice(Math.min(ri, next[to].length), 0, id);
-    } else return;
+    const i = flat.indexOf(id);
+    const j = dir === "left" ? i - 1 : dir === "right" ? i + 1 : dir === "up" ? i - cols : i + cols;
+    if (j < 0 || j >= flat.length) return;
+    const next = [...flat];
+    [next[i], next[j]] = [next[j], next[i]];
     commit(next);
   }
 
-  function drop(col: number, before: string | null) {
+  function drop(before: string | null) {
     if (!dragId) return;
-    const next = order.map((c2) => c2.filter((x) => x !== dragId));
-    const at = before ? next[col].indexOf(before) : -1;
-    next[col].splice(at < 0 ? next[col].length : at, 0, dragId);
+    const next = flat.filter((x) => x !== dragId);
+    const at = before ? next.indexOf(before) : -1;
+    next.splice(at < 0 ? next.length : at, 0, dragId);
     setDragId(null);
-    setDropAt(null);
+    setDropBefore(undefined);
     commit(next);
   }
 
-  const controls = (id: string, ci: number, ri: number, colCount: number, colLen: number) => {
+  const controls = (id: string, i: number) => {
     if (!arranging) return null;
-    const multi = !auto && !squeezed;
+    const name = byId.get(id)?.displayName ?? "device";
     return (
-      <span className={c("move")} role="group" aria-label={`Move ${byId.get(id)?.displayName ?? "device"}`}>
-        {multi && (
-          <button type="button" className={c("move-btn")} aria-label="Move to previous column" disabled={ci === 0} onClick={() => move(id, "left")}>
-            ←
-          </button>
-        )}
-        <button type="button" className={c("move-btn")} aria-label="Move up" disabled={ri === 0} onClick={() => move(id, "up")}>
+      <span className={c("move")} role="group" aria-label={`Move ${name}`}>
+        <button type="button" className={c("move-btn")} aria-label="Move left" disabled={i === 0} onClick={() => move(id, "left")}>
+          ←
+        </button>
+        <button type="button" className={c("move-btn")} aria-label="Move up a row" disabled={i - cols < 0} onClick={() => move(id, "up")}>
           ↑
         </button>
-        <button type="button" className={c("move-btn")} aria-label="Move down" disabled={ri === colLen - 1} onClick={() => move(id, "down")}>
+        <button type="button" className={c("move-btn")} aria-label="Move down a row" disabled={i + cols >= flat.length} onClick={() => move(id, "down")}>
           ↓
         </button>
-        {multi && (
-          <button type="button" className={c("move-btn")} aria-label="Move to next column" disabled={ci === colCount - 1} onClick={() => move(id, "right")}>
-            →
-          </button>
-        )}
+        <button type="button" className={c("move-btn")} aria-label="Move right" disabled={i === flat.length - 1} onClick={() => move(id, "right")}>
+          →
+        </button>
       </span>
     );
   };
 
-  const cardShell = (id: string, ci: number, ri: number, colCount: number, colLen: number) => {
-    const d = byId.get(id);
-    if (!d) return null;
-    const target = dropAt && dropAt.col === ci && dropAt.before === id;
-    return (
+  return (
+    <div ref={ref}>
+      {squeezed && arranging && (
+        <Notice>
+          The panel is only wide enough for {cols} column{cols === 1 ? "" : "s"}, so that's what you see. Your choice of{" "}
+          {layout.columns} comes back when the panel is wider.
+        </Notice>
+      )}
       <div
-        key={id}
-        className={c("cell", arranging && "cell--arranging", dragId === id && "cell--dragging", target && "cell--drop-before")}
-        draggable={arranging && !squeezed}
-        onDragStart={(e) => {
-          setDragId(id);
-          e.dataTransfer.effectAllowed = "move";
-          e.dataTransfer.setData("text/plain", id);
-        }}
-        onDragEnd={() => {
-          setDragId(null);
-          setDropAt(null);
-        }}
+        className={c("snap", arranging && "snap--arranging")}
+        style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
         onDragOver={(e) => {
-          if (!dragId || dragId === id) return;
+          if (!dragId) return;
           e.preventDefault();
-          e.stopPropagation();
-          setDropAt({ col: ci, before: id });
+          setDropBefore(null);
         }}
         onDrop={(e) => {
           e.preventDefault();
-          e.stopPropagation();
-          drop(ci, id);
+          drop(null);
         }}
       >
-        {renderCard(d, controls(id, ci, ri, colCount, colLen))}
-      </div>
-    );
-  };
-
-  // Auto, or a panel too narrow for the chosen count: one flowing grid.
-  if (auto || squeezed) {
-    const flat = order.flat();
-    return (
-      <div ref={ref}>
-        {squeezed && arranging && (
-          <Notice>
-            The panel is too narrow for {layout.columns} columns, so cards are shown in fewer. Widen the panel to move cards
-            between columns.
-          </Notice>
+        {flat.map((id, i) => {
+          const d = byId.get(id);
+          if (!d) return null;
+          return (
+            <div
+              key={id}
+              className={c("cell", arranging && "cell--arranging", dragId === id && "cell--dragging", dropBefore === id && "cell--drop-before")}
+              draggable={arranging}
+              onDragStart={(e) => {
+                setDragId(id);
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", id);
+              }}
+              onDragEnd={() => {
+                setDragId(null);
+                setDropBefore(undefined);
+              }}
+              onDragOver={(e) => {
+                if (!dragId || dragId === id) return;
+                e.preventDefault();
+                e.stopPropagation();
+                setDropBefore(id);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                drop(id);
+              }}
+            >
+              {renderCard(d, controls(id, i))}
+            </div>
+          );
+        })}
+        {arranging && dragId && (
+          <div className={c("cell-end", dropBefore === null && "cell-end--active")} aria-hidden="true">
+            Drop here to move to the end
+          </div>
         )}
-        <div className={c("flow")}>{flat.map((id, i) => cardShell(id, 0, i, 1, flat.length))}</div>
       </div>
-    );
-  }
-
-  return (
-    <div ref={ref} className={c("columns")} style={{ gridTemplateColumns: `repeat(${order.length}, minmax(0, 1fr))` }}>
-      {order.map((col, ci) => (
-        <div
-          key={ci}
-          className={c("column", arranging && "column--arranging", dropAt?.col === ci && dropAt.before === null && "column--drop")}
-          aria-label={`Column ${ci + 1}`}
-          role="group"
-          onDragOver={(e) => {
-            if (!dragId) return;
-            e.preventDefault();
-            setDropAt({ col: ci, before: null });
-          }}
-          onDrop={(e) => {
-            e.preventDefault();
-            drop(ci, null);
-          }}
-        >
-          {col.map((id, ri) => cardShell(id, ci, ri, order.length, col.length))}
-          {arranging && col.length === 0 && <div className={c("column-empty")}>Drop a device here</div>}
-        </div>
-      ))}
     </div>
   );
 }
-
-export { reflow };

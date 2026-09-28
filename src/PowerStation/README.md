@@ -3,7 +3,7 @@
 Control and monitor the Shelly relays, plugs and dimmers in your shack from
 inside Zeus. By KQ4WLR.
 
-## What it does (version 0.4)
+## What it does (version 0.4.1)
 
 - **Turn outputs on and off** on Shelly Gen2, Gen3, Gen4 and "Powered by
   Shelly" devices (Plus / Pro relays, Pro 3, Pro 4PM, Plug US, Dimmer Gen3,
@@ -11,9 +11,11 @@ inside Zeus. By KQ4WLR.
 - **Dim lights** on a drawing of the wall dimmer: click one of its seven
   level dots to jump to that level, the square to switch on and off, or
   − and + for 10% steps.
-- **Your own grid**: choose Auto or 1 to 4 columns on the Status tab, then
-  **Arrange** to drag devices where you want them (or use the arrow
-  buttons). The layout is saved and survives Zeus restarts.
+- **Your own grid**: devices snap to equal cells that fill the panel, and
+  cards in a row share a height. Choose Auto or 1 to 4 columns on the
+  Status tab, then **Arrange** to drag a device onto another to swap
+  places (or use the arrow buttons). The layout is saved and survives Zeus
+  restarts.
 - **Live readings** for metering devices: watts, volts, amps, energy (kWh)
   and device temperature, plus a running total for the whole station.
 - **Warnings** the device raises, such as overpower or overheating.
