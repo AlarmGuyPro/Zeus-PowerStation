@@ -411,7 +411,7 @@ function DeviceSettings({
             </>
           )}
 
-          {channels.some((ch) => ch.voltageV != null) && (
+          {channels.some((ch) => ch.voltageV != null) && !/rgbw/i.test(device.app ?? "") && (
             <>
               <h4 className={c("section-title")}>Supply</h4>
               <label className={c("check")}>

@@ -23,7 +23,9 @@ public sealed record ChannelCommand(
     string? Action,
     double? Brightness,
     double? TransitionSeconds,
-    string? Direction);
+    string? Direction,
+    int[]? Rgb = null,
+    double? White = null);
 
 /// <summary>A device as the UI sees it: record (minus secrets) plus live status.</summary>
 public sealed record DeviceView
@@ -584,7 +586,10 @@ public sealed class DeviceManager : IAsyncDisposable
             {
                 try
                 {
-                    if (t.Kind == ChannelKind.Light)
+                    if (t.Kind.IsColor())
+                        await entry.Client.SetColorAsync(t.Kind, t.Index, t.On, t.On ? t.Brightness : null,
+                            t.On ? t.Rgb : null, t.On ? t.White : null, fadeSeconds, ct).ConfigureAwait(false);
+                    else if (t.Kind == ChannelKind.Light)
                         await entry.Client.SetLightAsync(t.Index, t.On, t.On ? t.Brightness : null, fadeSeconds, ct).ConfigureAwait(false);
                     else
                         await entry.Client.SetSwitchAsync(t.Index, t.On, ct).ConfigureAwait(false);
@@ -668,6 +673,23 @@ public sealed class DeviceManager : IAsyncDisposable
         var client = entry.Client;
         switch (command.Action?.Trim().ToLowerInvariant())
         {
+            case "on" or "off" when kind.IsColor():
+                await client.SetColorAsync(kind, index, command.Action.Trim().Equals("on", StringComparison.OrdinalIgnoreCase),
+                    null, null, null, command.TransitionSeconds, ct).ConfigureAwait(false);
+                break;
+            case "brightness" when kind.IsColor():
+                if (command.Brightness is not (>= 1 and <= 100))
+                    throw new PowerStationRequestException(400, "Level must be between 1 and 100.");
+                await client.SetColorAsync(kind, index, true, command.Brightness, null, null, command.TransitionSeconds, ct).ConfigureAwait(false);
+                break;
+            case "color":
+            {
+                if (!kind.IsColor()) throw new PowerStationRequestException(400, "Only colour lights have a colour.");
+                if (command.Rgb is null) throw new PowerStationRequestException(400, "Give a colour.");
+                var (rgb, white) = SceneManager.ValidateColor(kind, true, command.Rgb, command.White);
+                await client.SetColorAsync(kind, index, true, command.Brightness, rgb, white, command.TransitionSeconds, ct).ConfigureAwait(false);
+                break;
+            }
             case "on":
                 if (kind == ChannelKind.Light) await client.SetLightAsync(index, true, null, command.TransitionSeconds, ct).ConfigureAwait(false);
                 else await client.SetSwitchAsync(index, true, ct).ConfigureAwait(false);
@@ -695,7 +717,7 @@ public sealed class DeviceManager : IAsyncDisposable
                 await client.DimAsync(index, direction, ct).ConfigureAwait(false);
                 break;
             default:
-                throw new PowerStationRequestException(400, "Action must be on, off, toggle, brightness or dim.");
+                throw new PowerStationRequestException(400, "Action must be on, off, toggle, brightness, dim or color.");
         }
 
         NoteOperatorAction();
@@ -765,7 +787,8 @@ public sealed class DeviceManager : IAsyncDisposable
 
     private static bool IsChannelKey(string key) =>
         (key.StartsWith("switch:", StringComparison.Ordinal) || key.StartsWith("light:", StringComparison.Ordinal) ||
-         key.StartsWith("emeter:", StringComparison.Ordinal)) &&
+         key.StartsWith("emeter:", StringComparison.Ordinal) || key.StartsWith("rgb:", StringComparison.Ordinal) ||
+         key.StartsWith("rgbw:", StringComparison.Ordinal)) &&
         int.TryParse(key[(key.IndexOf(':') + 1)..], out var i) && i is >= 0 and <= 15;
 
     private static string? Clean(string? value)

@@ -11,6 +11,36 @@ public enum ChannelKind
     Light,
     /// <summary>Read-only energy meter (ShellyEM clamps). Can't be switched.</summary>
     Meter,
+    /// <summary>Colour LED controller in RGB mode (e.g. Plus RGBW PM, <c>rgb:N</c>).</summary>
+    Rgb,
+    /// <summary>Colour LED controller with a white channel (<c>rgbw:N</c>).</summary>
+    Rgbw,
+}
+
+public static class ChannelKinds
+{
+    /// <summary>Has a brightness level: dimmers and colour lights.</summary>
+    public static bool IsDimmable(this ChannelKind kind) => kind is ChannelKind.Light or ChannelKind.Rgb or ChannelKind.Rgbw;
+    public static bool IsColor(this ChannelKind kind) => kind is ChannelKind.Rgb or ChannelKind.Rgbw;
+
+    /// <summary>The component prefix in channel keys and RPC method names' lower-case form.</summary>
+    public static string Prefix(this ChannelKind kind) => kind switch
+    {
+        ChannelKind.Light => "light",
+        ChannelKind.Meter => "emeter",
+        ChannelKind.Rgb => "rgb",
+        ChannelKind.Rgbw => "rgbw",
+        _ => "switch",
+    };
+
+    /// <summary>Gen2 RPC component name: Switch, Light, RGB, RGBW.</summary>
+    public static string RpcName(this ChannelKind kind) => kind switch
+    {
+        ChannelKind.Light => "Light",
+        ChannelKind.Rgb => "RGB",
+        ChannelKind.Rgbw => "RGBW",
+        _ => "Switch",
+    };
 }
 
 /// <summary>What PowerStation knows about a device before it is saved.</summary>
@@ -83,6 +113,10 @@ public sealed record ChannelState
     public string? Name { get; init; }
     public bool On { get; init; }
     public double? Brightness { get; init; }
+    /// <summary>Colour lights: [r, g, b], 0-255 each.</summary>
+    public int[]? Rgb { get; init; }
+    /// <summary>RGBW: white channel, 0-255.</summary>
+    public double? White { get; init; }
     public double? PowerW { get; init; }
     public double? VoltageV { get; init; }
     public double? CurrentA { get; init; }

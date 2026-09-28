@@ -12,14 +12,21 @@ public sealed record SceneTarget
     public required int Index { get; init; }
     public bool On { get; init; }
 
-    /// <summary>Dimmers only: level to set when turning on (1-100). Null keeps the current level.</summary>
+    /// <summary>Dimmers and colour lights: level to set when turning on (1-100). Null keeps the current level.</summary>
     public double? Brightness { get; init; }
+
+    /// <summary>Colour lights: [r, g, b] 0-255 to set when turning on. Null keeps the current colour.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int[]? Rgb { get; init; }
+
+    /// <summary>RGBW: white channel 0-255.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? White { get; init; }
 
     [JsonIgnore]
     public string ChannelKey => KeyFor(Kind, Index);
 
-    public static string KeyFor(ChannelKind kind, int index) =>
-        $"{kind switch { ChannelKind.Light => "light", ChannelKind.Meter => "emeter", _ => "switch" }}:{index}";
+    public static string KeyFor(ChannelKind kind, int index) => $"{kind.Prefix()}:{index}";
 }
 
 /// <summary>A named group of outputs and levels applied together.</summary>
@@ -150,7 +157,7 @@ public sealed class SceneManager
             throw new PowerStationRequestException(400, $"\"{scene.Name}\" has no outputs. Edit it to add some.");
 
         var targets = mode == "off"
-            ? scene.Targets.Select(t => t with { On = false, Brightness = null }).ToArray()
+            ? scene.Targets.Select(t => t with { On = false, Brightness = null, Rgb = null, White = null }).ToArray()
             : scene.Targets.ToArray();
         if (mode == "apply" && scene.SafetyMinutes is { } minutes)
             _devices.SetSceneSafety(targets.Where(t => t.On), minutes);
@@ -164,6 +171,24 @@ public sealed class SceneManager
             Results = results,
             Devices = views,
         };
+    }
+
+    /// <summary>Colour only on colour lights, white only on RGBW; values 0-255.</summary>
+    internal static (int[]? Rgb, double? White) ValidateColor(ChannelKind kind, bool on, int[]? rgb, double? white)
+    {
+        if (!kind.IsColor())
+        {
+            if (rgb is not null || white is not null)
+                throw new PowerStationRequestException(400, "Only colour lights have a colour.");
+            return (null, null);
+        }
+        if (!on) return (null, null);
+        if (rgb is not null && (rgb.Length != 3 || rgb.Any(v => v is < 0 or > 255)))
+            throw new PowerStationRequestException(400, "A colour needs red, green and blue values from 0 to 255.");
+        if (white is not null && kind != ChannelKind.Rgbw)
+            throw new PowerStationRequestException(400, "Only RGBW lights have a white channel.");
+        if (white is < 0 or > 255) throw new PowerStationRequestException(400, "White must be from 0 to 255.");
+        return (rgb, white is null ? null : Math.Round(white.Value));
     }
 
     private int IndexOf(string id)
@@ -199,7 +224,7 @@ public sealed class SceneManager
             if (!seen.Add($"{t.DeviceId}/{t.ChannelKey}"))
                 throw new PowerStationRequestException(400, "Each output can appear only once in a scene.");
             double? brightness = null;
-            if (t.Kind == ChannelKind.Light && t.On && t.Brightness is not null)
+            if (t.Kind.IsDimmable() && t.On && t.Brightness is not null)
             {
                 if (t.Brightness is < 1 or > 100)
                     throw new PowerStationRequestException(400, "Dimmer levels must be between 1 and 100%.");
@@ -209,7 +234,8 @@ public sealed class SceneManager
             {
                 throw new PowerStationRequestException(400, "Only dimmers have a level.");
             }
-            clean.Add(t with { Brightness = brightness });
+            var (rgb, white) = ValidateColor(t.Kind, t.On, t.Rgb, t.White);
+            clean.Add(t with { Brightness = brightness, Rgb = rgb, White = white });
         }
 
         return new Scene

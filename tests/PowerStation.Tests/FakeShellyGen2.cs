@@ -33,6 +33,9 @@ public sealed class FakeShellyGen2 : IAsyncDisposable
     public int Gen { get; init; } = 2;
     public List<FakeSwitch> Switches { get; } = [];
     public List<FakeLight> Lights { get; } = [];
+    /// <summary>Plus RGBW PM in RGB or RGBW profile: one rgb:0 or rgbw:0 component.</summary>
+    public List<FakeColor> Colors { get; } = [];
+    public bool ColorHasWhite { get; set; }
     public List<JsonObject> Calls { get; } = [];
     public int ChallengesIssued { get; private set; }
     public string Host { get; private set; } = "";
@@ -49,6 +52,16 @@ public sealed class FakeShellyGen2 : IAsyncDisposable
         public bool On;
         public double Brightness = 50;
         public string? Name;
+    }
+
+    public sealed class FakeColor
+    {
+        public bool On;
+        public double Brightness = 100;
+        public int[] Rgb = [255, 255, 255];
+        public double White;
+        public string? Name;
+        public double? LastTransition;
     }
 
     private FakeShellyGen2(string deviceId, WebApplication app)
@@ -152,6 +165,7 @@ public sealed class FakeShellyGen2 : IAsyncDisposable
                     var cfg = new JsonObject();
                     for (var i = 0; i < Switches.Count; i++) cfg[$"switch:{i}"] = new JsonObject { ["id"] = i, ["name"] = Switches[i].Name };
                     for (var i = 0; i < Lights.Count; i++) cfg[$"light:{i}"] = new JsonObject { ["id"] = i, ["name"] = Lights[i].Name };
+                    for (var i = 0; i < Colors.Count; i++) cfg[$"{ColorPrefix}:{i}"] = new JsonObject { ["id"] = i, ["name"] = Colors[i].Name };
                     return cfg;
                 }
                 case "Shelly.GetStatus":
@@ -176,8 +190,35 @@ public sealed class FakeShellyGen2 : IAsyncDisposable
                             ["id"] = i, ["source"] = "WS_in", ["output"] = Lights[i].On, ["brightness"] = Lights[i].Brightness,
                         };
                     }
+                    for (var i = 0; i < Colors.Count; i++)
+                    {
+                        var c = Colors[i];
+                        var o = new JsonObject
+                        {
+                            ["id"] = i, ["source"] = "WS_in", ["output"] = c.On, ["brightness"] = c.Brightness,
+                            ["rgb"] = new JsonArray(c.Rgb.Select(v => (JsonNode)v).ToArray()),
+                            ["apower"] = c.On ? 9.6 : 0, ["voltage"] = 24.1, ["current"] = c.On ? 0.4 : 0,
+                        };
+                        if (ColorHasWhite) o["white"] = c.White;
+                        st[$"{ColorPrefix}:{i}"] = o;
+                    }
                     return st;
                 }
+                case "RGB.Set" or "RGBW.Set":
+                {
+                    if ((method == "RGBW.Set") != ColorHasWhite) throw new RpcError(-114, $"Method {method} failed: No such method!");
+                    if (p["on"] is null && p["brightness"] is null) throw new RpcError(-103, "Missing required argument 'on' or 'brightness'!");
+                    var c = Color(Id());
+                    if (p["on"] is JsonValue on) c.On = on.GetValue<bool>();
+                    if (p["brightness"] is JsonValue b) c.Brightness = b.GetValue<double>();
+                    if (p["rgb"] is JsonArray rgb) c.Rgb = rgb.Select(v => v!.GetValue<int>()).ToArray();
+                    if (p["white"] is JsonValue w) c.White = w.GetValue<double>();
+                    c.LastTransition = p["transition_duration"]?.GetValue<double>();
+                    return null;
+                }
+                case "RGB.Toggle" or "RGBW.Toggle":
+                    Color(Id()).On ^= true;
+                    return null;
                 case "Switch.Set":
                 {
                     var s = Switch(Id());
@@ -218,6 +259,8 @@ public sealed class FakeShellyGen2 : IAsyncDisposable
     }
 
     private FakeSwitch Switch(int id) => id >= 0 && id < Switches.Count ? Switches[id] : throw new RpcError(-105, $"Argument 'id', value {id} not found!");
+    private string ColorPrefix => ColorHasWhite ? "rgbw" : "rgb";
+    private FakeColor Color(int id) => id >= 0 && id < Colors.Count ? Colors[id] : throw new RpcError(-105, $"Argument 'id', value {id} not found!");
     private FakeLight Light(int id) => id >= 0 && id < Lights.Count ? Lights[id] : throw new RpcError(-105, $"Argument 'id', value {id} not found!");
 
     private bool IsAuthorized(string header, out bool stale)
