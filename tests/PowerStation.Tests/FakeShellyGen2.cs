@@ -57,11 +57,11 @@ public sealed class FakeShellyGen2 : IAsyncDisposable
         _app = app;
     }
 
-    public static async Task<FakeShellyGen2> StartAsync(string deviceId = "shellypro4pm-aabbccddeeff", Action<FakeShellyGen2>? configure = null, int gen = 2)
+    public static async Task<FakeShellyGen2> StartAsync(string deviceId = "shellypro4pm-aabbccddeeff", Action<FakeShellyGen2>? configure = null, int gen = 2, string url = "http://127.0.0.1:0")
     {
         var builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
-        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.WebHost.UseUrls(url);
         var app = builder.Build();
         var fake = new FakeShellyGen2(deviceId, app) { Gen = gen };
         configure?.Invoke(fake);

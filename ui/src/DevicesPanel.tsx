@@ -2,6 +2,7 @@
 import { useId, useState, type FormEvent } from "react";
 import { ApiError, type DeviceView, type PowerStationClient, type ProbeResponse } from "./api";
 import { BackendError, HealthLabel, Loading, Notice, channelLabel, type StatusState } from "./shared";
+import { FindDevices } from "./discovery";
 import { ScenesSettings } from "./scenes";
 import { c } from "./styles";
 
@@ -20,6 +21,7 @@ export function SetupView({
   const { data, error, loading } = status;
   return (
     <>
+      <FindDevices client={client} onAdded={status.applyDevice} onShowStatus={onShowStatus} />
       <AddDeviceForm client={client} onAdded={status.applyDevice} onShowStatus={onShowStatus} />
       {loading && !data && <Loading />}
       {!data && error && <BackendError error={error} onRetry={status.reload} />}
@@ -102,7 +104,7 @@ function AddDeviceForm({
   return (
     <form className={c("form")} onSubmit={add} aria-labelledby={`${ids}-t`}>
       <h3 className={c("section-title")} id={`${ids}-t`} style={{ margin: 0 }}>
-        Add a device
+        Add by address
       </h3>
       <div className={c("fields")}>
         <div className={c("field")}>
@@ -245,6 +247,15 @@ function DeviceSettings({
             <dd>{device.deviceId}</dd>
             <dt>Generation</dt>
             <dd>Gen{device.generation}</dd>
+            {device.previousHost && (
+              <>
+                <dt>Moved</dt>
+                <dd>
+                  from {device.previousHost}
+                  {device.hostChangedAt ? ` on ${new Date(device.hostChangedAt).toLocaleString()}` : ""}
+                </dd>
+              </>
+            )}
             <dt>Password</dt>
             <dd>{device.authRequired ? (device.hasCredential ? "Saved (hashed)" : "Required, not saved") : "None set on device"}</dd>
           </dl>

@@ -15,8 +15,27 @@ namespace KQ4WLR.PowerStation.Api;
 /// </summary>
 internal static class PowerStationEndpoints
 {
-    public static void Map(IEndpointRouteBuilder endpoints, Func<DeviceManager?> manager, string version)
+    public static void Map(
+        IEndpointRouteBuilder endpoints, Func<DeviceManager?> manager, Func<DiscoveryService?> discovery, string version)
     {
+        endpoints.MapGet("discovery", (Handler)((HttpContext http) => Run(http, manager, (_, _) =>
+            Task.FromResult<object?>(Discovery(discovery).View()))));
+
+        endpoints.MapPut("discovery", (Handler)((HttpContext http) => Run(http, manager, async (_, ct) =>
+        {
+            var body = await ReadAsync<DiscoverySettingsRequest>(http, ct).ConfigureAwait(false);
+            return await Discovery(discovery).UpdateSettingsAsync(body, ct).ConfigureAwait(false);
+        })));
+
+        endpoints.MapPost("discovery/scan", (Handler)((HttpContext http) => Run(http, manager, async (_, ct) =>
+        {
+            var body = await ReadOptionalAsync<ScanRequest>(http, ct).ConfigureAwait(false) ?? new ScanRequest(null, null);
+            return Discovery(discovery).StartScan(body);
+        })));
+
+        endpoints.MapPost("discovery/cancel", (Handler)((HttpContext http) => Run(http, manager, (_, _) =>
+            Task.FromResult<object?>(Discovery(discovery).CancelScan()))));
+
         endpoints.MapGet("status", (Handler)((HttpContext http) => Run(http, manager, (m, _) =>
             Task.FromResult<object?>(new
             {
@@ -103,6 +122,9 @@ internal static class PowerStationEndpoints
     private delegate Task<IResult> Handler(HttpContext http);
 
     private sealed record ProbeRequest(string? Host);
+
+    private static DiscoveryService Discovery(Func<DiscoveryService?> get) =>
+        get() ?? throw new PowerStationRequestException(503, "PowerStation is still starting.");
 
     private static async Task<IResult> Run(
         HttpContext http, Func<DeviceManager?> getManager, Func<DeviceManager, CancellationToken, Task<object?>> action)

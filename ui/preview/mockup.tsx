@@ -3,7 +3,7 @@
 // against an in-memory pretend backend with example devices.
 import { useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { createClient, type ChannelState, type DeviceView, type Scene, type SceneTarget, type ZeusPluginApi } from "../src/api";
+import { createClient, type ChannelState, type DeviceView, type DiscoveryView, type Scene, type SceneTarget, type ZeusPluginApi } from "../src/api";
 import { PowerStationPanel } from "../src/PowerStationPanel";
 
 type Scenario = "normal" | "empty" | "down";
@@ -67,6 +67,55 @@ function exampleScenes(): Scene[] {
   ];
 }
 const state = { scenario: "normal" as Scenario, devices: exampleDevices(), scenes: exampleScenes() };
+
+// ---- pretend discovery: saved networks, a timed scan, and one device that moved
+const disc = {
+  networks: ["10.0.20.0/24", "10.0.30.0/24"],
+  autoRefind: true,
+  scan: { running: false, phase: "idle", probed: 0, total: 0, networks: [] as string[], usedMdns: false,
+    found: [] as DiscoveryView["scan"]["found"], startedAt: null as string | null, finishedAt: null as string | null, cancelled: false, error: null },
+  timer: 0 as number,
+};
+const pool = () => [
+  { at: 8, found: { device: { host: "10.0.20.14", deviceId: RACK, generation: 2, app: "Pro4PM", model: "SPSW-104PE16EU", name: "Shack Rack", authRequired: true, supported: true, foundBy: ["mdns", "sweep"] }, added: true } },
+  { at: 12, found: { device: { host: "10.0.20.77", deviceId: "shellyplus2pm-d48afc41a0b2", generation: 2, app: "Plus2PM", model: "SNSW-102P16EU", name: "Bench outlets", authRequired: false, supported: true, foundBy: ["mdns", "sweep"] }, added: false } },
+  { at: 30, found: { device: { host: "10.0.20.81", deviceId: "shellydimmer2-98cdac1f22e0", generation: 1, app: null, model: "SHDM-2", name: null, authRequired: false, supported: false, foundBy: ["sweep"] }, added: false } },
+  { at: 45, found: { device: { host: "10.0.20.90", deviceId: "shellyplugus-e4b3230a9c11", generation: 2, app: "PlugUS", model: "SNPL-00116US", name: "Heater plug", authRequired: true, supported: true, foundBy: ["sweep"] }, added: false } },
+  { at: 78, found: { device: { host: "10.0.30.52", deviceId: LIN, generation: 2, app: "Ogemray25A", model: "S25A", name: "Linear PSU (25A)", authRequired: false, supported: true, foundBy: ["sweep"] }, added: true, addressUpdatedFrom: "10.0.30.40" } },
+];
+function discoveryView(): DiscoveryView {
+  return clone({ settings: { networks: disc.networks, autoRefind: disc.autoRefind }, suggested: ["10.0.20.0/24"], scan: disc.scan }) as DiscoveryView;
+}
+function startMockScan(mdns: boolean) {
+  const nets = disc.networks.length ? disc.networks : ["10.0.20.0/24"];
+  const total = nets.length * 254;
+  disc.scan = { ...disc.scan, running: true, phase: mdns ? "mdns" : "sweep", probed: 0, total, networks: nets, usedMdns: mdns,
+    found: [], startedAt: new Date().toISOString(), finishedAt: null, cancelled: false, error: null };
+  const items = pool();
+  let tick = 0;
+  window.clearInterval(disc.timer);
+  disc.timer = window.setInterval(() => {
+    tick++;
+    if (disc.scan.phase === "mdns" && tick >= 3) disc.scan.phase = "sweep";
+    if (disc.scan.phase === "sweep") disc.scan.probed = Math.min(total, disc.scan.probed + Math.ceil(total / 14));
+    const pct = (disc.scan.probed / total) * 100;
+    for (const it of items)
+      if (pct >= it.at && !disc.scan.found.some((f) => f.device.deviceId === it.found.device.deviceId)) {
+        disc.scan.found.push(it.found as DiscoveryView["scan"]["found"][number]);
+        if (it.found.addressUpdatedFrom) {
+          const d = state.devices.find((x) => x.deviceId === LIN);
+          if (d) {
+            d.previousHost = d.host; d.host = it.found.device.host; d.hostChangedAt = new Date().toISOString();
+            d.status = { health: "Online", channels: d.status.channels };
+          }
+        }
+      }
+    if (disc.scan.probed >= total) {
+      disc.scan.running = false; disc.scan.phase = "done"; disc.scan.finishedAt = new Date().toISOString();
+      window.clearInterval(disc.timer);
+    }
+  }, 300);
+}
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 const fail = (error: string, status = 400) => json({ error, kind: "request" }, status);
@@ -86,7 +135,25 @@ const api: ZeusPluginApi = {
     await new Promise((r) => setTimeout(r, 180));
     if (state.scenario === "down") throw new TypeError("Failed to fetch");
     const devices = state.devices;
-    if (method === "GET" && path === "/status") return json({ version: "0.2.1", pollIntervalMs: 2000, devices: clone(devices), scenes: clone(state.scenes) });
+    if (method === "GET" && path === "/status") return json({ version: "0.3.0", pollIntervalMs: 2000, devices: clone(devices), scenes: clone(state.scenes) });
+
+    if (path === "/discovery" && method === "GET") return json(discoveryView());
+    if (path === "/discovery" && method === "PUT") {
+      if (body.networks) {
+        for (const n of body.networks)
+          if (!/^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\.\d+\.\d+\.\d+\/(2[0-9]|3[0-2])$/.test(n))
+            return fail(`"${n}" isn't a valid local network. Use the form 192.168.1.0/24, /20 or smaller.`);
+        disc.networks = body.networks;
+      }
+      if (typeof body.autoRefind === "boolean") disc.autoRefind = body.autoRefind;
+      return json(discoveryView());
+    }
+    if (path === "/discovery/scan") { startMockScan(body?.mdns !== false); return json(discoveryView()); }
+    if (path === "/discovery/cancel") {
+      window.clearInterval(disc.timer);
+      disc.scan = { ...disc.scan, running: false, phase: "done", cancelled: true, finishedAt: new Date().toISOString() };
+      return json(discoveryView());
+    }
 
     const sm = path.match(/^\/scenes(?:\/([^/]+))?(\/run)?$/);
     if (sm) {
@@ -196,6 +263,8 @@ function App() {
     state.scenario = s;
     state.devices = s === "empty" ? [] : exampleDevices();
     state.scenes = s === "empty" ? [] : exampleScenes();
+    window.clearInterval(disc.timer);
+    disc.scan = { ...disc.scan, running: false, phase: "idle", probed: 0, total: 0, found: [], finishedAt: null, cancelled: false };
     setScenario(s);
     setEpoch((e) => e + 1);
   };

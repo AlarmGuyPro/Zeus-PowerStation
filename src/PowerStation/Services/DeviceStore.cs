@@ -12,6 +12,12 @@ public sealed record PowerStationOptions
 
     /// <summary>Longest wait between polls of a device that isn't answering.</summary>
     public int MaxBackoffMs { get; init; } = 30000;
+
+    /// <summary>Consecutive missed polls before PowerStation looks for a device elsewhere.</summary>
+    public int RefindAfterFailures { get; init; } = 3;
+
+    /// <summary>Wait before the first re-find retry; doubles each time up to 30 minutes.</summary>
+    public int RefindCooldownMs { get; init; } = 60000;
 }
 
 public interface IDeviceStore
@@ -21,6 +27,8 @@ public interface IDeviceStore
     Task<PowerStationOptions> LoadOptionsAsync(CancellationToken ct);
     Task<IReadOnlyList<Scene>> LoadScenesAsync(CancellationToken ct);
     Task SaveScenesAsync(IReadOnlyList<Scene> scenes, CancellationToken ct);
+    Task<DiscoverySettings> LoadDiscoverySettingsAsync(CancellationToken ct);
+    Task SaveDiscoverySettingsAsync(DiscoverySettings settings, CancellationToken ct);
 }
 
 /// <summary>
@@ -58,6 +66,17 @@ public sealed class SettingsDeviceStore : IDeviceStore
     public Task SaveScenesAsync(IReadOnlyList<Scene> scenes, CancellationToken ct) =>
         _settings.SetAsync(ScenesKey, JsonSerializer.Serialize(scenes, Json.Options), ct);
 
+    public async Task<DiscoverySettings> LoadDiscoverySettingsAsync(CancellationToken ct)
+    {
+        var json = await _settings.GetAsync<string>(DiscoveryService.SettingsKey, ct).ConfigureAwait(false);
+        return string.IsNullOrWhiteSpace(json)
+            ? new DiscoverySettings()
+            : JsonSerializer.Deserialize<DiscoverySettings>(json, Json.Options) ?? new DiscoverySettings();
+    }
+
+    public Task SaveDiscoverySettingsAsync(DiscoverySettings settings, CancellationToken ct) =>
+        _settings.SetAsync(DiscoveryService.SettingsKey, JsonSerializer.Serialize(settings, Json.Options), ct);
+
     public async Task<PowerStationOptions> LoadOptionsAsync(CancellationToken ct)
     {
         var json = await _settings.GetAsync<string>(OptionsKey, ct).ConfigureAwait(false);
@@ -68,6 +87,8 @@ public sealed class SettingsDeviceStore : IDeviceStore
         {
             PollIntervalMs = Math.Clamp(options.PollIntervalMs, 500, 60000),
             MaxBackoffMs = Math.Clamp(options.MaxBackoffMs, 2000, 300000),
+            RefindAfterFailures = Math.Clamp(options.RefindAfterFailures, 1, 20),
+            RefindCooldownMs = Math.Clamp(options.RefindCooldownMs, 1000, 3600000),
         };
     }
 }

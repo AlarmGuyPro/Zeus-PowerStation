@@ -3,7 +3,7 @@
 Control and monitor the Shelly relays, plugs and dimmers in your shack from
 inside Zeus. By KQ4WLR.
 
-## What it does (version 0.2.1)
+## What it does (version 0.3)
 
 - **Turn outputs on and off** on Shelly Gen2, Gen3, Gen4 and "Powered by
   Shelly" devices (Plus / Pro relays, Pro 3, Pro 4PM, Plug US, Dimmer Gen3,
@@ -12,24 +12,34 @@ inside Zeus. By KQ4WLR.
 - **Live readings** for metering devices: watts, volts, amps, energy (kWh)
   and device temperature, plus a running total for the whole station.
 - **Warnings** the device raises, such as overpower or overheating.
+- **Finds your devices**: a scan on the Setup tab looks across the networks
+  you list (each VLAN your Shellies use) and listens for devices announcing
+  themselves on this computer's network (mDNS). Add what it finds in one
+  click.
+- **Keeps up with DHCP**: devices are tracked by their Shelly device ID, not
+  their address. If a device stops answering, PowerStation looks for it on
+  its old network and your saved networks and moves it to its new address
+  automatically. You don't need DHCP reservations.
+- **Status lamps** on every output: green on, red off, blue for a dimmer on
+  below 100%, grey when the device isn't answering.
 - **Scenes**: a named set of outputs and dimmer levels applied in one click,
   with an optional fade for dimmers. Every scene also has **All off**, so a
   scene doubles as an on/off group. If one device is offline, the rest of
   the scene still runs and PowerStation tells you what was missed.
 
-Gen1 devices, automatic discovery, and automations (Zeus start/stop, TX,
-band, idle time) are coming in the next versions.
+Gen1 devices (a scan shows them as "coming soon") and automations (Zeus
+start/stop, TX, band, idle time) are coming in the next versions.
 
 ## Setting up
 
-1. Set each device up with the **Shelly app** first and give it a fixed IP
-   address (a DHCP reservation in your router is easiest).
+1. Set each device up with the **Shelly app** first. DHCP addresses are fine.
 2. In Zeus, add the **PowerStation** panel (Switches category). It has two
    tabs: **Status** for everyday control and **Setup** for devices and scenes.
    On first run it opens on Setup.
-3. On **Setup**, enter the device's IP address and choose **Add device**. If
-   the device has a password, you'll be asked for it. Choose **Show on Status
-   tab** to go back to the controls.
+3. On **Setup**, under **Find devices**, add each network your Shellies are
+   on (for example `192.168.50.0/24`) and choose **Scan now**. Choose **Add**
+   next to each device you want. You can also add a device by its address.
+   If the device has a password, you'll be asked for it.
 4. To make a scene, scroll to **Scenes** on the Setup tab and choose **New
    scene**. Tick the outputs, pick On or Off and a level for each dimmer, or
    press **Use current states** to capture the station as it is. Scene
@@ -39,8 +49,10 @@ band, idle time) are coming in the next versions.
 Setup tab, if you'd like both views docked side by side.
 
 Devices on another VLAN work as long as the Zeus computer can reach them on
-port 80. If a device shows **Offline**, check the address and any firewall
-between the two networks.
+port 80. mDNS only reaches this computer's own network; the scan covers other
+VLANs. A scan covers up to 4,096 addresses at a time (a /20, or several
+/24s). If Windows asks whether Zeus may use the network, allow it on private
+networks so mDNS can work.
 
 ## Privacy and safety
 

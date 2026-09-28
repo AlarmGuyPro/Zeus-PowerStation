@@ -34,6 +34,8 @@ public sealed record DeviceView
     public string? Mac { get; init; }
     public bool AuthRequired { get; init; }
     public bool HasCredential { get; init; }
+    public string? PreviousHost { get; init; }
+    public DateTimeOffset? HostChangedAt { get; init; }
     public required DeviceStatus Status { get; init; }
 }
 
@@ -81,6 +83,9 @@ public sealed class DeviceManager : IAsyncDisposable
     public SceneManager Scenes { get; private set; } = null!;
 
     public bool Contains(string deviceId) => _entries.ContainsKey(deviceId);
+
+    /// <summary>Raised after each poll that couldn't reach a device: (device id, address, consecutive failures).</summary>
+    public event Action<string, string, int>? DeviceUnreachable;
 
     private sealed class Entry(DeviceRecord record, IShellyClient client)
     {
@@ -177,6 +182,11 @@ public sealed class DeviceManager : IAsyncDisposable
             catch (ShellyException ex)
             {
                 entry.Failures++;
+                if (ex.Kind == ShellyErrorKind.Unreachable)
+                {
+                    try { DeviceUnreachable?.Invoke(entry.Record.DeviceId, entry.Record.Host, entry.Failures); }
+                    catch (Exception hookError) { _logger.LogError(hookError, "PowerStation: re-find hook failed"); }
+                }
                 if (entry.Failures == 1)
                     _logger.LogWarning("PowerStation: {Device} {Kind}: {Message}", entry.Record.DeviceId, ex.Kind, ex.Message);
                 entry.Status = entry.Status with
@@ -237,6 +247,8 @@ public sealed class DeviceManager : IAsyncDisposable
         Mac = e.Record.Mac,
         AuthRequired = e.Record.AuthRequired,
         HasCredential = e.Record.Ha1 is not null,
+        PreviousHost = e.Record.PreviousHost,
+        HostChangedAt = e.Record.HostChangedAt,
         Status = e.Status,
     };
 
@@ -330,7 +342,8 @@ public sealed class DeviceManager : IAsyncDisposable
             if (!string.Equals(identity.DeviceId, current.DeviceId, StringComparison.Ordinal))
                 throw new PowerStationRequestException(409,
                     $"{host} is a different device ({identity.DeviceId}). Add it as a new device instead.");
-            updated = updated with { Host = host, AuthRequired = identity.AuthRequired };
+            if (!string.Equals(host, current.Host, StringComparison.OrdinalIgnoreCase))
+                updated = updated with { Host = host, AuthRequired = identity.AuthRequired, PreviousHost = null, HostChangedAt = null };
         }
         if (request.ClearPassword == true) updated = updated with { Ha1 = null };
         if (!string.IsNullOrEmpty(request.Password))
@@ -425,6 +438,41 @@ public sealed class DeviceManager : IAsyncDisposable
         return (
             results.OrderBy(r => order.GetValueOrDefault($"{r.DeviceId}/{r.ChannelKey}")).ToArray(),
             touched.Select(ToView).ToArray());
+    }
+
+    /// <summary>
+    /// Moves a device to an address where its own ID was just seen, unless it
+    /// is still answering at its current address (a Pro on both Wi-Fi and
+    /// Ethernet has two addresses; don't flip between them). Returns the old
+    /// address when the device was moved, otherwise null.
+    /// </summary>
+    internal async Task<string?> RelocateIfMovedAsync(string deviceId, string newHost, string how, CancellationToken ct)
+    {
+        if (!_entries.TryGetValue(deviceId, out var entry)) return null;
+        if (string.Equals(entry.Record.Host, newHost, StringComparison.OrdinalIgnoreCase)) return null;
+        if (entry.Status.Health == DeviceHealth.Online) return null;
+
+        string oldHost;
+        await _mutate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (!_entries.TryGetValue(deviceId, out entry)) return null;
+            oldHost = entry.Record.Host;
+            if (string.Equals(oldHost, newHost, StringComparison.OrdinalIgnoreCase)) return null;
+            await ReplaceAsync(entry.Record with
+            {
+                Host = newHost,
+                PreviousHost = oldHost,
+                HostChangedAt = _time.GetUtcNow(),
+            }, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _mutate.Release();
+        }
+        _logger.LogInformation("PowerStation: {Device} moved from {Old} to {New} (found by {How})", deviceId, oldHost, newHost, how);
+        await PollEntryAsync(entry, ct).ConfigureAwait(false);
+        return oldHost;
     }
 
     public async Task<DeviceView> RefreshAsync(string deviceId, CancellationToken ct)

@@ -116,6 +116,30 @@ ${e("pick")} input[type="number"] { width: 4.5em; }
 ${e("pick-state")} { display: inline-flex; gap: 4px; align-items: center; }
 ${e("pick-unit")} { color: var(--fg-3); font-size: 11px; }
 
+${e("led")} { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--fg-3); box-shadow: 0 0 0 1px var(--line); }
+${e("led--on")} { background: var(--ok); box-shadow: 0 0 5px var(--ok); }
+${e("led--off")} { background: var(--tx); }
+${e("led--dim")} { background: var(--accent-bright); box-shadow: 0 0 5px var(--accent); }
+${e("tile-label")} { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+
+${e("chips")} { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+${e("chip")} { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 11px; padding: 2px 4px 2px 8px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--bg-1); }
+${e("chip")} button { border: 0; background: transparent; color: var(--fg-2); cursor: pointer; min-width: 22px; min-height: 22px; border-radius: var(--r-xs); }
+${e("chip")} button:hover { color: var(--fg-0); background: var(--bg-3); }
+${e("chip--suggest")} { border-style: dashed; color: var(--fg-2); padding: 2px 8px; cursor: pointer; background: transparent; }
+${e("check")} { display: flex; align-items: flex-start; gap: 6px; font-size: 12px; color: var(--fg-1); }
+${e("check")} input { margin-top: 2px; accent-color: var(--accent); }
+${e("progress")} { height: 4px; border-radius: 2px; background: var(--bg-inset); overflow: hidden; }
+${e("progress")} > span { display: block; height: 100%; background: var(--accent); }
+${e("found")} { display: grid; gap: 6px; }
+${e("found-row")} { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; align-items: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-1); }
+${e("found-name")} { font-weight: 500; color: var(--fg-0); overflow-wrap: anywhere; }
+${e("found-meta")} { font-family: var(--font-mono); font-size: 10.5px; color: var(--fg-3); overflow-wrap: anywhere; }
+${e("found-add")} { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: end; }
+${e("found-add")} ${e("field")} { flex: 1 1 140px; }
+${e("badge--ok")} { border-color: var(--ok); color: var(--ok); }
+${e("badge--muted")} { border-color: var(--line-strong); color: var(--fg-3); }
+
 @media (prefers-reduced-motion: no-preference) {
   ${e("tile")}, ${e("button")} { transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
 }

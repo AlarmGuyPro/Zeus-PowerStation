@@ -41,6 +41,8 @@ export interface DeviceView {
   mac?: string | null;
   authRequired: boolean;
   hasCredential: boolean;
+  previousHost?: string | null;
+  hostChangedAt?: string | null;
   status: {
     health: DeviceHealth;
     message?: string | null;
@@ -79,6 +81,36 @@ export interface StatusResponse {
   pollIntervalMs: number;
   devices: DeviceView[];
   scenes: Scene[];
+}
+
+export interface FoundDevice {
+  host: string;
+  deviceId: string;
+  generation: number;
+  model?: string | null;
+  app?: string | null;
+  name?: string | null;
+  authRequired: boolean;
+  supported: boolean;
+  foundBy: string[];
+}
+
+export interface DiscoveryView {
+  settings: { networks: string[]; autoRefind: boolean };
+  suggested: string[];
+  scan: {
+    running: boolean;
+    phase: "idle" | "mdns" | "sweep" | "done";
+    probed: number;
+    total: number;
+    networks: string[];
+    usedMdns: boolean;
+    found: { device: FoundDevice; added: boolean; addressUpdatedFrom?: string | null }[];
+    startedAt?: string | null;
+    finishedAt?: string | null;
+    cancelled: boolean;
+    error?: string | null;
+  };
 }
 
 export interface ProbeResponse {
@@ -142,6 +174,11 @@ export function createClient(api: ZeusPluginApi) {
   const sceneBody = (s: Omit<Scene, "id">) => ({ name: s.name, fadeSeconds: s.fadeSeconds ?? null, targets: s.targets });
 
   return {
+    discovery: () => call<DiscoveryView>("GET", "/discovery"),
+    saveDiscovery: (patch: { networks?: string[]; autoRefind?: boolean }) => call<DiscoveryView>("PUT", "/discovery", patch),
+    startScan: (mdns: boolean, networks?: string[]) =>
+      call<DiscoveryView>("POST", "/discovery/scan", { mdns, networks: networks ?? null }),
+    cancelScan: () => call<DiscoveryView>("POST", "/discovery/cancel"),
     createScene: (s: Omit<Scene, "id">) => call<Scene>("POST", "/scenes", sceneBody(s)),
     updateScene: (id: string, s: Omit<Scene, "id">) => call<Scene>("PUT", `/scenes/${encodeURIComponent(id)}`, sceneBody(s)),
     deleteScene: (id: string) => call<{ removed: string }>("DELETE", `/scenes/${encodeURIComponent(id)}`),

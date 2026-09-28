@@ -47,6 +47,10 @@ public sealed record DeviceRecord
     public Dictionary<string, string> ChannelNames { get; init; } = new();
 
     public DateTimeOffset AddedAt { get; init; }
+
+    /// <summary>Address before PowerStation last found the device somewhere new.</summary>
+    public string? PreviousHost { get; init; }
+    public DateTimeOffset? HostChangedAt { get; init; }
 }
 
 /// <summary>Live reading and state for one output channel.</summary>

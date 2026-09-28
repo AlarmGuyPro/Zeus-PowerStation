@@ -79,6 +79,12 @@ function DeviceCard({
               : message ?? "The device isn't answering."}
           </Notice>
         )}
+        {device.previousHost && device.hostChangedAt &&
+          Date.now() - new Date(device.hostChangedAt).getTime() < 24 * 3600 * 1000 && (
+            <p className={c("hint")} style={{ margin: "0 0 6px" }}>
+              Found at a new address, {device.host} (was {device.previousHost}).
+            </p>
+          )}
         {actionError && <Notice tone="error">{actionError}</Notice>}
         {channels.length === 0 && online && (
           <p className={c("hint")}>This device has no relay or dimmer outputs PowerStation can control.</p>
@@ -139,8 +145,11 @@ function ChannelTile({
   return (
     <div className={c("tile", channel.on && "tile--on")}>
       <div className={c("tile-top")}>
-        <span className={c("tile-name")} title={label}>
-          {label}
+        <span className={c("tile-label")}>
+          <Led channel={channel} stale={disabled} />
+          <span className={c("tile-name")} title={label}>
+            {label}
+          </span>
         </span>
         <span className={c("state", channel.on && "state--on")}>{channel.on ? "On" : "Off"}</span>
       </div>
@@ -187,6 +196,24 @@ function ChannelTile({
       )}
     </div>
   );
+}
+
+/**
+ * State lamp: green on, red off, blue for a dimmer that's on below 100%.
+ * Grey when the device isn't answering, since the last state may be stale.
+ * Decorative: the ON/OFF text next to it carries the same information.
+ */
+function Led({ channel, stale }: { channel: ChannelState; stale: boolean }) {
+  const dimmed = channel.kind === "Light" && channel.on && (channel.brightness ?? 100) < 100;
+  const tone = stale ? null : dimmed ? "led--dim" : channel.on ? "led--on" : "led--off";
+  const title = stale
+    ? "State unknown: device not answering"
+    : dimmed
+      ? `Dimmed to ${Math.round(channel.brightness ?? 0)}%`
+      : channel.on
+        ? "On"
+        : "Off";
+  return <span className={c("led", tone)} title={title} aria-hidden="true" />;
 }
 
 /**

@@ -35,10 +35,10 @@ public sealed class PluginHost : IAsyncDisposable
         Http = http;
     }
 
-    public static async Task<PluginHost> StartAsync(FakePluginContext? context = null)
+    public static async Task<PluginHost> StartAsync(FakePluginContext? context = null, PowerStationPlugin? plugin = null)
     {
         context ??= new FakePluginContext();
-        var plugin = new PowerStationPlugin();
+        plugin ??= new PowerStationPlugin { UseMdns = false };
         await plugin.InitializeAsync(context, CancellationToken.None);
 
         var builder = WebApplication.CreateSlimBuilder();
