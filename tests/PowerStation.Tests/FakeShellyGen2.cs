@@ -30,6 +30,8 @@ public sealed class FakeShellyGen2 : IAsyncDisposable
     public string Model { get; init; } = "SPSW-104PE16EU";
     public string? Password { get; set; }
     public bool RejectTag { get; set; }
+    /// <summary>Raw JSON to send as the Shelly.GetConfig result (to imitate firmware quirks).</summary>
+    public string? RawConfigResult { get; set; }
     public int Gen { get; init; } = 2;
     public List<FakeSwitch> Switches { get; } = [];
     public List<FakeLight> Lights { get; } = [];
@@ -124,6 +126,12 @@ public sealed class FakeShellyGen2 : IAsyncDisposable
 
         var id = frame["id"]?.GetValue<int>() ?? 0;
         var method = frame["method"]!.GetValue<string>();
+        if (method == "Shelly.GetConfig" && RawConfigResult is not null)
+        {
+            http.Response.ContentType = "application/json";
+            await http.Response.WriteAsync($"{{\"id\":{id},\"src\":\"{DeviceId}\",\"result\":{RawConfigResult}}}");
+            return;
+        }
         var p = frame["params"] as JsonObject ?? new JsonObject();
         JsonNode? result;
         try

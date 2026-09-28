@@ -3,7 +3,7 @@
 Control and monitor the Shelly relays, plugs, dimmers and energy meters in
 your shack from inside Zeus, and let Zeus switch them for you. By KQ4WLR.
 
-## What it does (version 0.6.1)
+## What it does (version 0.6.2)
 
 - **Turn outputs on and off** on Shelly Gen1, Gen2, Gen3, Gen4 and "Powered
   by Shelly" devices: Shelly 1 / 1PM / 2.5 (relay mode), Plug and Plug S,

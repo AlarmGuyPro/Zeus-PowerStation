@@ -22,6 +22,7 @@ and ships inside the package.
 | 3+ | One Save for device settings; 120 V split-phase wording, measured voltage shown, line-to-line option (from operator test) | **Done** (0.5.1) |
 | 3+ | Colour lights: Plus RGBW PM in RGB/RGBW mode with colour, level and white on the panel, in scenes and in rules | **Done** (0.6.0) |
 | 3+ | Setup › Debug: filterable device traffic log (commands, errors, optional polls) with copy/download; unreadable status shown on the card | **Done** (0.6.1) |
+| 3+ | Plus RGBW PM connects: device replies with a repeated setting name are read (last value wins); output names can't block polling (found with the debug log) | **Done** (0.6.2) |
 | 4 | Rules on readings (low battery, AC out of range), polish, in-Zeus screenshots, catalog submission | Planned |
 
 ## Layout

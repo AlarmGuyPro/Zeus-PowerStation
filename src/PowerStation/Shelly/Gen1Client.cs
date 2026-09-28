@@ -71,7 +71,7 @@ public sealed class Gen1Client : IShellyClient
         if (DateTimeOffset.UtcNow - _namesFetchedAt > NameRefreshInterval)
         {
             try { _names = ParseNames(await GetJsonAsync("/settings", ct).ConfigureAwait(false)); }
-            catch (ShellyException ex) when (ex.Kind is ShellyErrorKind.Protocol or ShellyErrorKind.DeviceError) { }
+            catch (Exception ex) when (ex is ShellyException { Kind: ShellyErrorKind.Protocol or ShellyErrorKind.DeviceError } or ArgumentException or InvalidOperationException) { }
             _namesFetchedAt = DateTimeOffset.UtcNow;
         }
         var status = await GetJsonAsync("/status", ct).ConfigureAwait(false);
@@ -164,7 +164,7 @@ public sealed class Gen1Client : IShellyClient
                         $"{pathAndQuery.Split('?')[0]}: device answered HTTP {(int)response.StatusCode}{(body.Length is > 0 and < 200 ? $" ({body.Trim()})" : "")}.");
                 try
                 {
-                    return JsonNode.Parse(body) as JsonObject
+                    return LenientJson.Parse(body) as JsonObject
                            ?? throw new ShellyException(ShellyErrorKind.Protocol, "The device returned no data.");
                 }
                 catch (JsonException ex)

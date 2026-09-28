@@ -106,7 +106,7 @@ public sealed class Gen2Client : IShellyClient
                     $"{host} answered HTTP {(int)response.StatusCode} on /shelly. Is this a Shelly device?");
             var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             seen((int)response.StatusCode, body);
-            info = JsonNode.Parse(body) as JsonObject
+            info = LenientJson.Parse(body) as JsonObject
                    ?? throw new ShellyException(ShellyErrorKind.Protocol, $"{host} didn't return Shelly device info.");
         }
         catch (ShellyException) { throw; }
@@ -199,9 +199,11 @@ public sealed class Gen2Client : IShellyClient
                 var config = await CallAsync("Shelly.GetConfig", null, ct).ConfigureAwait(false) as JsonObject;
                 _deviceNames = ParseNames(config);
             }
-            catch (ShellyException ex) when (ex.Kind == ShellyErrorKind.DeviceError)
+            catch (Exception ex) when (ex is ShellyException { Kind: ShellyErrorKind.DeviceError or ShellyErrorKind.Protocol }
+                                           or ArgumentException or InvalidOperationException or FormatException)
             {
-                // Names are cosmetic; keep polling without them.
+                // Names are cosmetic; never let an odd config stop the status poll.
+                _log?.Event(_deviceId, "Reading output names", $"{ex.GetType().Name}: {ex.Message}");
             }
             _namesFetchedAt = DateTimeOffset.UtcNow;
         }
@@ -390,7 +392,7 @@ public sealed class Gen2Client : IShellyClient
     private static JsonNode? ParseRpcResponse(string method, HttpStatusCode status, string body)
     {
         JsonObject? frame;
-        try { frame = JsonNode.Parse(body) as JsonObject; }
+        try { frame = LenientJson.Parse(body) as JsonObject; }
         catch (JsonException ex)
         {
             throw new ShellyException(ShellyErrorKind.Protocol,

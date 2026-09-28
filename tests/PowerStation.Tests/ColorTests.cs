@@ -131,6 +131,26 @@ public static class ColorTests
     }
 
     [Test]
+    public static async Task ConfigWithARepeatedKeyStillConnects()
+    {
+        // Seen on a real Plus RGBW PM: button_fade_rate appears twice in rgbw:0's config.
+        await using var fake = await Rgbw();
+        fake.RawConfigResult = """
+            {"rgbw:0":{"id":0,"name":"Shack Desk Accent Lights","button_fade_rate":3,"night_mode":{"enable":false},
+             "button_fade_rate":3,"button_presets":{"button_doublepush":{"brightness":100}}}}
+            """;
+        await using var host = await PluginHost.StartAsync();
+        var (status, device) = await host.SendAsync(HttpMethod.Post, "devices", new { host = fake.Host });
+        Assert.Equal(HttpStatusCode.OK, status, "add");
+        Assert.Equal("Online", device!["status"]!["health"]!.GetValue<string>(), $"online: {device["status"]!["message"]}");
+        Assert.Equal("Shack Desk Accent Lights", First(device)["name"]!.GetValue<string>(), "name read despite the repeat");
+
+        var lenient = KQ4WLR.PowerStation.Shelly.LenientJson.Parse("""{"a":1,"a":2,"b":{"c":[1,{"d":true,"d":false}]}}""")!;
+        Assert.Equal(2, lenient["a"]!.GetValue<long>(), "last one wins");
+        Assert.False(lenient["b"]!["c"]![1]!["d"]!.GetValue<bool>(), "nested");
+    }
+
+    [Test]
     public static void DcSupplyIsNotJudgedAsMains()
     {
         var time = new ManualTime(DateTimeOffset.UnixEpoch);
