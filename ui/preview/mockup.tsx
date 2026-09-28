@@ -3,7 +3,7 @@
 // against an in-memory pretend backend with example devices.
 import { useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { createClient, type ChannelState, type DeviceView, type DiscoveryView, type Scene, type SceneTarget, type ZeusPluginApi } from "../src/api";
+import { createClient, type ChannelState, type DeviceView, type DiscoveryView, type Layout, type Scene, type SceneTarget, type ZeusPluginApi } from "../src/api";
 import { PowerStationPanel } from "../src/PowerStationPanel";
 
 type Scenario = "normal" | "empty" | "down";
@@ -43,6 +43,28 @@ function exampleDevices(): DeviceView[] {
       ] },
     },
     {
+      deviceId: "shelly1g4-7c2c6771eea0", displayName: "Antenna Genius Power", name: "Antenna Genius Power", host: "192.168.50.116",
+      generation: 4, model: "S1G4", app: "S1G4", mac: null, authRequired: false, hasCredential: false,
+      status: { health: "Online", channels: [
+        { key: "switch:0", kind: "Switch", index: 0, name: "12 VCD Power", on: true, errors: [], flags: [], metered: false },
+      ] },
+    },
+    {
+      deviceId: "shelly1g4-7c2c6771f310", displayName: "Front Gate Control", name: "Front Gate Control", host: "192.168.60.21",
+      generation: 4, model: "S1G4", app: "S1G4", mac: null, authRequired: false, hasCredential: false,
+      status: { health: "Online", channels: [
+        { key: "switch:0", kind: "Switch", index: 0, name: "Gate Open", on: false, errors: [], flags: [], metered: false },
+      ] },
+    },
+    {
+      deviceId: "shellywalldimmer-b0a7329e11c4", displayName: "Shack overhead", name: "Shack overhead", host: "10.0.20.33",
+      generation: 2, model: "SNDM-0013US", app: "WallDimmer", mac: null, authRequired: false, hasCredential: false,
+      status: { health: "Online", channels: [
+        { key: "light:0", kind: "Light", index: 0, name: "Overhead", on: true, brightness: 100, powerW: 11.2,
+          voltageV: 121.1, currentA: 0.09, errors: [], flags: [], metered: true },
+      ] },
+    },
+    {
       deviceId: "ogemray25a-a1b2c3d4e5f6", displayName: "Linear PSU (25A)", name: "Linear PSU (25A)", host: "10.0.30.40",
       generation: 2, model: "S25A", app: "Ogemray25A", mac: null, authRequired: false, hasCredential: false,
       status: { health: "Unreachable", message: "10.0.30.40 didn't answer in time. Check the address and that this computer can reach that network.", channels: [sw(0, "Linear PSU", false, 0)] },
@@ -66,7 +88,15 @@ function exampleScenes(): Scene[] {
     { id: "s-listen", name: "Listen only", fadeSeconds: null, targets: [t(RACK, "Switch", 0, false), t(RACK, "Switch", 1, true), t(ANT, "Switch", 0, true), t(ANT, "Switch", 2, true)] },
   ];
 }
-const state = { scenario: "normal" as Scenario, devices: exampleDevices(), scenes: exampleScenes() };
+const exampleLayout = (): Layout => ({
+  columns: 3,
+  order: [
+    ["shellypro4pm-f008d1d8b8b8", "shelly1g4-7c2c6771eea0"],
+    ["shellydimmerg3-84fce63a1b2c", "shellywalldimmer-b0a7329e11c4", "shelly1g4-7c2c6771f310"],
+    ["shellypro3-c8f09e1a2b3c", "ogemray25a-a1b2c3d4e5f6", "shellyplugus-c049ef8a2b10"],
+  ],
+});
+const state = { scenario: "normal" as Scenario, devices: exampleDevices(), scenes: exampleScenes(), layout: exampleLayout() };
 
 // ---- pretend discovery: saved networks, a timed scan, and one device that moved
 const disc = {
@@ -135,7 +165,11 @@ const api: ZeusPluginApi = {
     await new Promise((r) => setTimeout(r, 180));
     if (state.scenario === "down") throw new TypeError("Failed to fetch");
     const devices = state.devices;
-    if (method === "GET" && path === "/status") return json({ version: "0.3.0", pollIntervalMs: 2000, devices: clone(devices), scenes: clone(state.scenes) });
+    if (method === "GET" && path === "/status") return json({ version: "0.4.0", pollIntervalMs: 2000, devices: clone(devices), scenes: clone(state.scenes), layout: state.scenario === "empty" ? null : clone(state.layout) });
+    if (path === "/layout" && method === "PUT") {
+      state.layout = { columns: body.columns, order: body.order };
+      return json(state.layout);
+    }
 
     if (path === "/discovery" && method === "GET") return json(discoveryView());
     if (path === "/discovery" && method === "PUT") {
@@ -263,6 +297,7 @@ function App() {
     state.scenario = s;
     state.devices = s === "empty" ? [] : exampleDevices();
     state.scenes = s === "empty" ? [] : exampleScenes();
+    state.layout = exampleLayout();
     window.clearInterval(disc.timer);
     disc.scan = { ...disc.scan, running: false, phase: "idle", probed: 0, total: 0, found: [], finishedAt: null, cancelled: false };
     setScenario(s);
@@ -274,7 +309,7 @@ function App() {
         <label className="mk-select">
           <span>Situation</span>
           <select id="mk-scenario" value={scenario} onChange={(e) => pick(e.currentTarget.value as Scenario)}>
-            <option value="normal">Example shack (5 devices)</option>
+            <option value="normal">Example shack (8 devices)</option>
             <option value="empty">First run, no devices yet</option>
             <option value="down">Zeus backend not responding</option>
           </select>

@@ -76,11 +76,18 @@ export interface SceneRunResult {
   devices: DeviceView[];
 }
 
+/** Status-tab arrangement. columns 0 = automatic; order[i] = device IDs in column i, top to bottom. */
+export interface Layout {
+  columns: number;
+  order: string[][];
+}
+
 export interface StatusResponse {
   version: string;
   pollIntervalMs: number;
   devices: DeviceView[];
   scenes: Scene[];
+  layout?: Layout | null;
 }
 
 export interface FoundDevice {
@@ -174,6 +181,7 @@ export function createClient(api: ZeusPluginApi) {
   const sceneBody = (s: Omit<Scene, "id">) => ({ name: s.name, fadeSeconds: s.fadeSeconds ?? null, targets: s.targets });
 
   return {
+    saveLayout: (layout: Layout) => call<Layout>("PUT", "/layout", layout),
     discovery: () => call<DiscoveryView>("GET", "/discovery"),
     saveDiscovery: (patch: { networks?: string[]; autoRefind?: boolean }) => call<DiscoveryView>("PUT", "/discovery", patch),
     startScan: (mdns: boolean, networks?: string[]) =>

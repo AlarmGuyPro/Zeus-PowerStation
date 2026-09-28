@@ -50,7 +50,7 @@ ${e("health--online")}::before { background: var(--ok); }
 ${e("health--warn")}::before { background: var(--amber); }
 ${e("health--bad")}::before { background: var(--tx); }
 
-${e("grid")} { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+${e("grid")} { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
 ${e("tile")} { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-1); padding: 8px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 ${e("tile--on")} { border-color: var(--accent); background: var(--bg-3); }
 ${e("tile-top")} { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
@@ -118,7 +118,7 @@ ${e("pick-unit")} { color: var(--fg-3); font-size: 11px; }
 
 ${e("led")} { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--fg-3); box-shadow: 0 0 0 1px var(--line); }
 ${e("led--on")} { background: var(--ok); box-shadow: 0 0 5px var(--ok); }
-${e("led--off")} { background: var(--tx); }
+${e("led--off")} { background: color-mix(in srgb, var(--amber) 55%, var(--tx)); box-shadow: 0 0 5px color-mix(in srgb, var(--amber) 55%, var(--tx)); }
 ${e("led--dim")} { background: var(--accent-bright); box-shadow: 0 0 5px var(--accent); }
 ${e("tile-label")} { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 
@@ -139,6 +139,47 @@ ${e("found-add")} { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6p
 ${e("found-add")} ${e("field")} { flex: 1 1 140px; }
 ${e("badge--ok")} { border-color: var(--ok); color: var(--ok); }
 ${e("badge--muted")} { border-color: var(--line-strong); color: var(--fg-3); }
+
+${e("toolbar")} { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; margin: 0 0 8px; }
+${e("seg")} { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-inset); }
+${e("seg-label")} { font-size: 11px; color: var(--fg-3); padding: 0 6px 0 4px; }
+${e("seg-btn")} { min-width: 30px; min-height: 24px; padding: 1px 8px; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--fg-2); cursor: pointer; font-size: 11px; }
+${e("seg-btn")}[aria-checked="true"] { background: var(--bg-3); color: var(--fg-0); box-shadow: inset 0 -2px 0 var(--accent); }
+
+${e("columns")} { display: grid; gap: 10px; align-items: start; }
+${e("column")} { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 40px; border-radius: var(--r-md); }
+${e("column--arranging")} { outline: 1px dashed var(--line-strong); outline-offset: 3px; padding-bottom: 24px; }
+${e("column--drop")} { outline-color: var(--accent); }
+${e("column-empty")} { border: 1px dashed var(--line-strong); border-radius: var(--r-md); padding: 18px 8px; text-align: center; color: var(--fg-3); font-size: 11px; }
+${e("flow")} { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); align-items: start; }
+${e("cell")} { min-width: 0; }
+${e("cell")} > ${e("device")} { margin: 0; }
+${e("cell--arranging")} { cursor: grab; }
+${e("cell--arranging")} > ${e("device")} { border-style: dashed; }
+${e("cell--dragging")} { opacity: 0.45; }
+${e("cell--drop-before")} { box-shadow: 0 -3px 0 var(--accent); border-radius: var(--r-md); }
+${e("grip")} { color: var(--fg-3); font-size: 12px; line-height: 1; }
+${e("move")} { display: inline-flex; gap: 2px; margin-left: auto; }
+${e("move-btn")} { min-width: 24px; min-height: 24px; border: 1px solid var(--line-strong); border-radius: var(--r-xs); background: var(--bg-1); color: var(--fg-1); cursor: pointer; font-size: 12px; line-height: 1; }
+${e("move-btn")}:disabled { opacity: 0.35; cursor: default; }
+
+${e("tile--dimmer")} { gap: 8px; }
+${e("wd")} { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: center; }
+${e("wd-plate")} { display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 6px; width: 58px; height: 138px; padding: 6px 0; border-radius: 7px; background: var(--wd-face); border: 1px solid var(--wd-edge); box-shadow: 0 1px 2px var(--line); }
+${e("wd-screw")} { width: 5px; height: 5px; border-radius: 50%; border: 1px solid var(--wd-edge); flex: none; }
+${e("wd-paddle")} { flex: 1; width: 40px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 7px 0 6px; border-radius: 4px; border: 1px solid var(--wd-edge); background: var(--wd-face); box-shadow: 0 1px 0 var(--wd-edge); }
+${e("wd-channel")} { display: flex; flex-direction: column; align-items: center; padding: 3px 0; width: 14px; border-radius: 3px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wd-edge) 55%, transparent); }
+${e("wd-dot")} { width: 14px; height: 10px; padding: 0; border: 0; background: transparent; cursor: pointer; display: grid; place-items: center; }
+${e("wd-dot")} > span { width: 4px; height: 4px; border-radius: 50%; background: var(--wd-dot); }
+${e("wd-dot--lit")} > span { background: var(--accent-bright); box-shadow: 0 0 4px var(--accent-bright); }
+${e("wd-dot")}:disabled { cursor: default; }
+${e("wd-dot")}:focus-visible { outline-offset: 0; }
+${e("wd-square")} { width: 18px; height: 18px; padding: 0; border: 0; background: transparent; cursor: pointer; display: grid; place-items: center; }
+${e("wd-square")} > span { width: 13px; height: 13px; border-radius: 3px; border: 2px solid var(--wd-mark); box-sizing: border-box; }
+${e("wd-square--on")} > span { box-shadow: 0 0 5px var(--accent-bright); border-color: var(--accent-bright); }
+${e("wd-square")}:disabled { cursor: default; opacity: 0.6; }
+${e("wd-side")} { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+${e("wd-level")} { font-family: var(--font-mono); font-size: 18px; color: var(--fg-0); font-variant-numeric: tabular-nums; }
 
 @media (prefers-reduced-motion: no-preference) {
   ${e("tile")}, ${e("button")} { transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }

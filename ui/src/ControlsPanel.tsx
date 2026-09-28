@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { ApiError, type ChannelState, type DeviceView, type PowerStationClient } from "./api";
 import { BackendError, HealthLabel, Loading, Notice, channelLabel, fmt, type StatusState } from "./shared";
+import { DeviceGrid, LayoutToolbar, reflow, useLayout } from "./layout";
 import { ScenesStrip } from "./scenes";
 import { c } from "./styles";
 
@@ -14,7 +15,7 @@ const ERROR_TEXT: Record<string, string> = {
   unsupported_load: "Unsupported load",
 };
 
-/** Status tab: scene buttons and one card per device with its outputs. */
+/** Status tab: scene buttons, then the device cards in the operator's grid. */
 export function StatusView({
   client,
   status,
@@ -25,6 +26,9 @@ export function StatusView({
   onGoToSetup: () => void;
 }) {
   const { data, error, loading } = status;
+  const { layout, save, error: layoutError } = useLayout(client, data?.layout);
+  const [arranging, setArranging] = useState(false);
+
   if (loading && !data) return <Loading />;
   if (!data && error) return <BackendError error={error} onRetry={status.reload} />;
   if (!data) return null;
@@ -42,9 +46,27 @@ export function StatusView({
     <>
       {error && <Notice tone="warn">Lost contact with PowerStation. Showing the last known state.</Notice>}
       <ScenesStrip client={client} status={status} />
-      {data.devices.map((d) => (
-        <DeviceCard key={d.deviceId} device={d} client={client} onUpdate={status.applyDevice} />
-      ))}
+      <LayoutToolbar
+        layout={layout}
+        arranging={arranging}
+        onColumns={(n) => save({ columns: n, order: reflow(layout.order.length ? layout.order : [data.devices.map((d) => d.deviceId)], n) })}
+        onArrange={setArranging}
+      />
+      {arranging && (
+        <p className={c("hint")} style={{ margin: "0 0 8px" }}>
+          Drag a card to a new spot, or use its arrows. Choose Done arranging when you're finished.
+        </p>
+      )}
+      {layoutError && <Notice tone="warn">{layoutError}</Notice>}
+      <DeviceGrid
+        devices={data.devices}
+        layout={layout}
+        arranging={arranging}
+        onSave={save}
+        renderCard={(d, controls) => (
+          <DeviceCard device={d} client={client} onUpdate={status.applyDevice} controls={controls} arranging={arranging} />
+        )}
+      />
     </>
   );
 }
@@ -53,10 +75,14 @@ function DeviceCard({
   device,
   client,
   onUpdate,
+  controls,
+  arranging,
 }: {
   device: DeviceView;
   client: PowerStationClient;
   onUpdate: (d: DeviceView) => void;
+  controls: ReactNode;
+  arranging: boolean;
 }) {
   const { health, message, channels } = device.status;
   const online = health === "Online";
@@ -65,13 +91,14 @@ function DeviceCard({
   return (
     <article className={c("device")} aria-labelledby={`ps-${device.deviceId}`}>
       <div className={c("device-head")}>
+        {arranging && <span className={c("grip")} aria-hidden="true">⠿</span>}
         <h3 className={c("device-name")} id={`ps-${device.deviceId}`}>
           {device.displayName}
         </h3>
         <span className={c("device-meta")}>{device.app ?? device.model ?? ""}</span>
-        <HealthLabel device={device} />
+        {controls ?? <HealthLabel device={device} />}
       </div>
-      <div className={c("device-body")}>
+      <div className={c("device-body")} inert={arranging ? true : undefined}>
         {!online && health !== "Pending" && (
           <Notice tone={health === "Unreachable" ? "error" : "warn"}>
             {health === "Unauthorized"
@@ -142,18 +169,59 @@ function ChannelTile({
   const errors = channel.errors.map((e) => ERROR_TEXT[e] ?? e);
   const uncalibrated = channel.flags.includes("uncalibrated");
 
+  const readings = channel.metered && (
+    <div className={c("meter")} aria-label={`${label} readings`}>
+      {channel.powerW != null && <span className={c("meter-main")}>{fmt.watts(channel.powerW)}</span>}
+      {channel.voltageV != null && <span>{fmt.volts(channel.voltageV)}</span>}
+      {channel.currentA != null && <span>{fmt.amps(channel.currentA)}</span>}
+      {channel.energyWh != null && <span>{fmt.energy(channel.energyWh)}</span>}
+      {channel.temperatureC != null && <span>{fmt.temp(channel.temperatureC)}</span>}
+    </div>
+  );
+  const badges = (errors.length > 0 || uncalibrated) && (
+    <div className={c("row")}>
+      {errors.map((e) => (
+        <span key={e} className={c("badge", "badge--danger")}>
+          {e}
+        </span>
+      ))}
+      {uncalibrated && <span className={c("badge")}>Needs calibration</span>}
+    </div>
+  );
+  const header = (
+    <div className={c("tile-top")}>
+      <span className={c("tile-label")}>
+        <Led channel={channel} stale={disabled} />
+        <span className={c("tile-name")} title={label}>
+          {label}
+        </span>
+      </span>
+      <span className={c("state", channel.on && "state--on")}>{channel.on ? "On" : "Off"}</span>
+    </div>
+  );
+
+  if (channel.kind === "Light")
+    return (
+      <div className={c("tile", "tile--dimmer", channel.on && "tile--on")}>
+        {header}
+        <WallDimmer
+          label={label}
+          on={channel.on}
+          value={channel.brightness ?? 0}
+          disabled={disabled || busy}
+          levelDisabled={uncalibrated}
+          onToggle={() => send({ action: channel.on ? "off" : "on" })}
+          onLevel={(v) => send({ action: "brightness", brightness: v })}
+        >
+          {readings}
+        </WallDimmer>
+        {badges}
+      </div>
+    );
+
   return (
     <div className={c("tile", channel.on && "tile--on")}>
-      <div className={c("tile-top")}>
-        <span className={c("tile-label")}>
-          <Led channel={channel} stale={disabled} />
-          <span className={c("tile-name")} title={label}>
-            {label}
-          </span>
-        </span>
-        <span className={c("state", channel.on && "state--on")}>{channel.on ? "On" : "Off"}</span>
-      </div>
-
+      {header}
       <button
         type="button"
         className={c("button", "power")}
@@ -164,42 +232,14 @@ function ChannelTile({
       >
         {busy ? "…" : channel.on ? "Turn off" : "Turn on"}
       </button>
-
-      {channel.kind === "Light" && (
-        <Dimmer
-          label={label}
-          value={channel.brightness ?? 0}
-          disabled={disabled || busy || uncalibrated}
-          onCommit={(v) => send({ action: "brightness", brightness: v })}
-        />
-      )}
-
-      {channel.metered && (
-        <div className={c("meter")} aria-label={`${label} readings`}>
-          {channel.powerW != null && <span className={c("meter-main")}>{fmt.watts(channel.powerW)}</span>}
-          {channel.voltageV != null && <span>{fmt.volts(channel.voltageV)}</span>}
-          {channel.currentA != null && <span>{fmt.amps(channel.currentA)}</span>}
-          {channel.energyWh != null && <span>{fmt.energy(channel.energyWh)}</span>}
-          {channel.temperatureC != null && <span>{fmt.temp(channel.temperatureC)}</span>}
-        </div>
-      )}
-
-      {(errors.length > 0 || uncalibrated) && (
-        <div className={c("row")}>
-          {errors.map((e) => (
-            <span key={e} className={c("badge", "badge--danger")}>
-              {e}
-            </span>
-          ))}
-          {uncalibrated && <span className={c("badge")}>Needs calibration</span>}
-        </div>
-      )}
+      {readings}
+      {badges}
     </div>
   );
 }
 
 /**
- * State lamp: green on, red off, blue for a dimmer that's on below 100%.
+ * State lamp: green on, orange off, blue for a dimmer that's on below 100%.
  * Grey when the device isn't answering, since the last state may be stale.
  * Decorative: the ON/OFF text next to it carries the same information.
  */
@@ -216,90 +256,146 @@ function Led({ channel, stale }: { channel: ChannelState; stale: boolean }) {
   return <span className={c("led", tone)} title={title} aria-hidden="true" />;
 }
 
+/** Level of each of the 7 dots on the wall dimmer, bottom to top. */
+const DOT_LEVELS = [14, 29, 43, 57, 71, 86, 100];
+
 /**
- * Brightness slider plus -/+ buttons (keyboard and touch friendly). The
- * slider shows the value while dragging and sends one command on release.
+ * True when the panel's background is dark. The dimmer drawing is always a
+ * light-colored plate like the real device, so its details need contrast
+ * picked from the other end of the theme.
  */
-function Dimmer({
+function useDarkBackground(ref: RefObject<HTMLElement | null>) {
+  const [dark, setDark] = useState(true);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let node: HTMLElement | null = el;
+    let bg = "";
+    while (node && (!bg || bg === "rgba(0, 0, 0, 0)" || bg === "transparent")) {
+      bg = getComputedStyle(node).backgroundColor;
+      node = node.parentElement;
+    }
+    const m = bg.match(/\d+(\.\d+)?/g);
+    if (m && m.length >= 3) {
+      const [r, g, b] = m.slice(0, 3).map(Number);
+      setDark(0.2126 * r + 0.7152 * g + 0.0722 * b < 128);
+    }
+  });
+  return dark;
+}
+
+/**
+ * A drawing of the wall dimmer: a plate with a column of 7 level dots and a
+ * square on/off button, like the real device. Dots light from the bottom up
+ * with the brightness; click a dot to jump to that level, or the square to
+ * switch on and off. − and + step by 10% for finer control and keyboards.
+ */
+function WallDimmer({
   label,
+  on,
   value,
   disabled,
-  onCommit,
+  levelDisabled,
+  onToggle,
+  onLevel,
+  children,
 }: {
   label: string;
+  on: boolean;
   value: number;
   disabled: boolean;
-  onCommit: (v: number) => void;
+  levelDisabled: boolean;
+  onToggle: () => void;
+  onLevel: (v: number) => void;
+  children?: ReactNode;
 }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const dark = useDarkBackground(ref);
   const [draft, setDraft] = useState<number | null>(null);
-  const timer = useRef<number | undefined>(undefined);
   const settle = useRef<number | undefined>(undefined);
-  useEffect(
-    () => () => {
-      window.clearTimeout(timer.current);
-      window.clearTimeout(settle.current);
-    },
-    [],
-  );
-  // Hold the operator's value until the device reports the new level, so the
-  // slider doesn't jump back while the command is in flight.
-  useEffect(() => setDraft(null), [value]);
+  useEffect(() => () => window.clearTimeout(settle.current), []);
+  // Show the requested level until the device reports it (or 3 s pass).
+  useEffect(() => setDraft(null), [value, on]);
 
-  const shown = Math.round(draft ?? value);
-  const commit = (v: number) => {
-    window.clearTimeout(timer.current);
-    const clamped = Math.max(0, Math.min(100, Math.round(v)));
-    if (clamped === Math.round(value)) {
-      setDraft(null);
-      return;
-    }
+  const level = Math.round(draft ?? value);
+  const lit = on ? Math.max(1, Math.ceil((level / 100) * DOT_LEVELS.length)) : 0;
+  const set = (v: number) => {
+    const clamped = Math.max(1, Math.min(100, Math.round(v)));
+    if (on && clamped === Math.round(value)) return;
     setDraft(clamped);
     window.clearTimeout(settle.current);
     settle.current = window.setTimeout(() => setDraft(null), 3000);
-    onCommit(clamped);
+    onLevel(clamped);
   };
 
+  const plateStyle = {
+    "--wd-face": dark ? "var(--fg-0)" : "var(--bg-inset)",
+    "--wd-edge": dark ? "var(--fg-2)" : "var(--line-strong)",
+    "--wd-mark": dark ? "var(--bg-1)" : "var(--fg-1)",
+    "--wd-dot": dark ? "var(--fg-3)" : "var(--fg-3)",
+  } as CSSProperties;
+
   return (
-    <div className={c("dimmer")}>
-      <button
-        type="button"
-        className={c("button", "button--small")}
-        aria-label={`${label}: dimmer down 10%`}
-        disabled={disabled || shown <= 0}
-        onClick={() => commit(shown - 10)}
-      >
-        −
-      </button>
-      <input
-        type="range"
-        min={0}
-        max={100}
-        step={1}
-        value={shown}
-        disabled={disabled}
-        aria-label={`${label} brightness`}
-        aria-valuetext={`${shown} percent`}
-        onChange={(e) => {
-          const v = Number(e.currentTarget.value);
-          setDraft(v);
-          // Keyboard arrows fire change without a release event: commit after a pause.
-          window.clearTimeout(timer.current);
-          timer.current = window.setTimeout(() => commit(v), 400);
-        }}
-        onPointerUp={(e) => commit(Number(e.currentTarget.value))}
-      />
-      <button
-        type="button"
-        className={c("button", "button--small")}
-        aria-label={`${label}: dimmer up 10%`}
-        disabled={disabled || shown >= 100}
-        onClick={() => commit(shown + 10)}
-      >
-        +
-      </button>
-      <span className={c("dim-value")} style={{ gridColumn: "1 / -1" }} aria-hidden="true">
-        {shown}%
-      </span>
+    <div className={c("wd")} ref={ref}>
+      <div className={c("wd-plate")} style={plateStyle}>
+        <span className={c("wd-screw")} aria-hidden="true" />
+        <div className={c("wd-paddle")}>
+          <div className={c("wd-channel")} role="group" aria-label={`${label} level`}>
+            {[...DOT_LEVELS].reverse().map((lvl) => {
+              const index = DOT_LEVELS.indexOf(lvl);
+              return (
+                <button
+                  key={lvl}
+                  type="button"
+                  className={c("wd-dot", index < lit && "wd-dot--lit")}
+                  aria-label={`${label}: set to ${lvl}%`}
+                  disabled={disabled || levelDisabled}
+                  onClick={() => set(lvl)}
+                >
+                  <span />
+                </button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            className={c("wd-square", on && "wd-square--on")}
+            aria-pressed={on}
+            aria-label={`${label}: turn ${on ? "off" : "on"}`}
+            disabled={disabled}
+            onClick={onToggle}
+          >
+            <span />
+          </button>
+        </div>
+        <span className={c("wd-screw")} aria-hidden="true" />
+      </div>
+      <div className={c("wd-side")}>
+        <div className={c("wd-level")} aria-live="polite">
+          {on ? `${level}%` : "Off"}
+        </div>
+        <div className={c("row")}>
+          <button
+            type="button"
+            className={c("button", "button--small")}
+            aria-label={`${label}: dimmer down 10%`}
+            disabled={disabled || levelDisabled || !on || level <= 1}
+            onClick={() => set(level - 10)}
+          >
+            −
+          </button>
+          <button
+            type="button"
+            className={c("button", "button--small")}
+            aria-label={`${label}: dimmer up 10%`}
+            disabled={disabled || levelDisabled || level >= 100}
+            onClick={() => set(on ? level + 10 : Math.max(level, 10))}
+          >
+            +
+          </button>
+        </div>
+        {children}
+      </div>
     </div>
   );
 }
