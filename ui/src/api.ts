@@ -9,7 +9,7 @@ export interface ZeusPluginApi {
 }
 
 /** Meter = a read-only energy-meter channel (ShellyEM / EM clamps); it can't be switched. */
-export type ChannelKind = "Switch" | "Light" | "Meter";
+export type ChannelKind = "Switch" | "Light" | "Meter" | "Rgb" | "Rgbw";
 export type DeviceHealth = "Pending" | "Online" | "Unreachable" | "Unauthorized" | "Error";
 
 export interface ChannelState {
@@ -19,6 +19,10 @@ export interface ChannelState {
   name?: string | null;
   on: boolean;
   brightness?: number | null;
+  /** Colour controllers: [r, g, b] 0-255. */
+  rgb?: [number, number, number] | null;
+  /** RGBW: white channel 0-255. */
+  white?: number | null;
   powerW?: number | null;
   voltageV?: number | null;
   currentA?: number | null;
@@ -126,6 +130,8 @@ export interface SceneTarget {
   index: number;
   on: boolean;
   brightness?: number | null;
+  rgb?: [number, number, number] | null;
+  white?: number | null;
 }
 
 export interface Scene {
@@ -182,7 +188,11 @@ export type TriggerType = Trigger["type"];
 
 export type Action =
   | { type: "scene"; sceneId: string; mode: "apply" | "off" }
-  | { type: "output"; deviceId: string; kind: ChannelKind; index: number; on: boolean; brightness?: number | null; rampSeconds?: number | null };
+  | {
+      type: "output"; deviceId: string; kind: ChannelKind; index: number; on: boolean;
+      brightness?: number | null; rampSeconds?: number | null;
+      rgb?: [number, number, number] | null; white?: number | null;
+    };
 
 /** What happens when a lasting condition (TX, band, range, idle) ends. */
 export type EndAction = { type: "restore" } | { type: "none" } | { type: "off" } | Action;
@@ -264,8 +274,10 @@ export interface ProbeResponse {
 }
 
 export interface ChannelCommand {
-  action: "on" | "off" | "toggle" | "brightness" | "dim";
+  action: "on" | "off" | "toggle" | "brightness" | "dim" | "color";
   brightness?: number;
+  rgb?: [number, number, number];
+  white?: number | null;
   transitionSeconds?: number;
   direction?: "up" | "down" | "stop";
 }

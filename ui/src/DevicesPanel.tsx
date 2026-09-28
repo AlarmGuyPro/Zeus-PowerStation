@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { useId, useState, type FormEvent } from "react";
 import { ApiError, type DeviceView, type PowerStationClient, type ProbeResponse } from "./api";
-import { BackendError, HealthLabel, Loading, Notice, channelLabel, type StatusState } from "./shared";
+import { BackendError, HealthLabel, KIND_LABEL, Loading, Notice, channelLabel, type StatusState } from "./shared";
 import { FindDevices } from "./discovery";
 import { ScenesSettings } from "./scenes";
 import { AutomationsSettings } from "./automations";
@@ -364,7 +364,7 @@ function DeviceSettings({
                 {channels.map((ch) => (
                   <div className={c("field")} key={ch.key}>
                     <label htmlFor={`${ids}-${ch.key}`}>
-                      {ch.kind === "Light" ? "Dimmer" : ch.kind === "Meter" ? "Meter" : "Output"} {ch.index + 1}
+                      {KIND_LABEL[ch.kind] ?? "Output"} {ch.index + 1}
                     </label>
                     <input
                       id={`${ids}-${ch.key}`}

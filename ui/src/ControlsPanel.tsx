@@ -4,6 +4,7 @@ import { ApiError, type ChannelState, type DeviceView, type PowerStationClient }
 import { BackendError, HealthLabel, Loading, Notice, channelLabel, fmt, type StatusState } from "./shared";
 import { DeviceGrid, useLayout } from "./layout";
 import { ScenesStrip } from "./scenes";
+import { ColorTile, describeColor, isColor, isDimmable, shown } from "./color";
 import { mismatch } from "./readings";
 import { c } from "./styles";
 
@@ -273,6 +274,25 @@ function ChannelTile({
       </div>
     );
 
+  if (isColor(channel.kind))
+    return (
+      <>
+        <ColorTile
+          channel={channel}
+          label={label}
+          disabled={disabled || busy}
+          header={header}
+          onPower={(on) => send({ action: on ? "on" : "off" })}
+          onColor={(v) => send({ action: "color", rgb: v.rgb, white: v.white ?? null })}
+          onBrightness={(b) => send({ action: "brightness", brightness: b })}
+        >
+          {readings}
+          {safety}
+          {badges}
+        </ColorTile>
+      </>
+    );
+
   if (channel.kind === "Light")
     return (
       <div className={c("tile", "tile--dimmer", channel.on && "tile--on")}>
@@ -328,7 +348,18 @@ function TimerIcon() {
  * Decorative: the ON/OFF text next to it carries the same information.
  */
 function Led({ channel, stale }: { channel: ChannelState; stale: boolean }) {
-  const dimmed = channel.kind === "Light" && channel.on && (channel.brightness ?? 100) < 100;
+  if (isColor(channel.kind) && channel.on && !stale && channel.rgb) {
+    const rgb = shown({ rgb: channel.rgb, white: channel.white });
+    return (
+      <span
+        className={c("led", "led--color")}
+        style={{ "--led": `rgb(${rgb[0]} ${rgb[1]} ${rgb[2]})` } as CSSProperties}
+        title={`On, ${describeColor({ rgb: channel.rgb, white: channel.white })}, ${Math.round(channel.brightness ?? 100)}%`}
+        aria-hidden="true"
+      />
+    );
+  }
+  const dimmed = isDimmable(channel.kind) && channel.on && (channel.brightness ?? 100) < 100;
   const tone = stale ? null : dimmed ? "led--dim" : channel.on ? "led--on" : "led--off";
   const title = stale
     ? "State unknown: device not answering"

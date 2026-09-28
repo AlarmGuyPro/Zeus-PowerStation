@@ -89,11 +89,19 @@ function exampleDevices(): DeviceView[] {
       ] },
     },
     {
-      deviceId: "shellydimmerg3-84fce63a9e01", displayName: "On Air sign", name: "On Air sign", host: "10.0.20.34",
-      generation: 3, model: "S3DM-0010WW", app: "DimmerG3", mac: null, authRequired: false, hasCredential: false,
+      deviceId: "shellyplusrgbwpm-84fce63a9e01", displayName: "On Air sign", name: "On Air sign", host: "10.0.20.34",
+      generation: 2, model: "SNDC-0D4P10WW", app: "PlusRGBWPM", mac: null, authRequired: false, hasCredential: false,
       status: { health: "Online", channels: [
-        { key: "light:0", kind: "Light", index: 0, name: "On Air", on: false, brightness: 100, powerW: 0,
-          voltageV: 121.0, currentA: 0, errors: [], flags: [], metered: true },
+        { key: "rgb:0", kind: "Rgb", index: 0, name: "On Air", on: false, brightness: 100, rgb: [255, 0, 0], powerW: 0,
+          voltageV: 12.1, currentA: 0, errors: [], flags: [], metered: true },
+      ] },
+    },
+    {
+      deviceId: "shellyplusrgbwpm-84fce63a77aa", displayName: "Shack accent strip", name: "Shack accent strip", host: "10.0.20.35",
+      generation: 2, model: "SNDC-0D4P10WW", app: "PlusRGBWPM", mac: null, authRequired: false, hasCredential: false,
+      status: { health: "Online", channels: [
+        { key: "rgbw:0", kind: "Rgbw", index: 0, name: "Accent strip", on: true, brightness: 60, rgb: [255, 70, 0], white: 40,
+          powerW: 9.6, voltageV: 24.0, currentA: 0.4, errors: [], flags: [], metered: true },
       ] },
     },
     {
@@ -110,14 +118,15 @@ function exampleDevices(): DeviceView[] {
 }
 
 const RACK = "shellypro4pm-f008d1d8b8b8", ANT = "shellypro3-c8f09e1a2b3c", LAMP = "shellydimmerg3-84fce63a1b2c", LIN = "ogemray25a-a1b2c3d4e5f6";
-const ONAIR = "shellydimmerg3-84fce63a9e01", OVER = "shellywalldimmer-b0a7329e11c4";
+const ONAIR = "shellyplusrgbwpm-84fce63a9e01", ACCENT = "shellyplusrgbwpm-84fce63a77aa", OVER = "shellywalldimmer-b0a7329e11c4";
 const t = (deviceId: string, kind: "Switch" | "Light", index: number, on: boolean, brightness: number | null = null): SceneTarget =>
   ({ deviceId, kind, index, on, brightness });
 function exampleScenes(): Scene[] {
   return [
     { id: "s-operating", name: "Operating", fadeSeconds: 2, targets: [
       t(RACK, "Switch", 0, true), t(RACK, "Switch", 1, true), t(RACK, "Switch", 2, true), t(ANT, "Switch", 0, true), t(LAMP, "Light", 0, true, 70), t(LIN, "Switch", 0, true) ] },
-    { id: "s-evening", name: "Evening lights", fadeSeconds: 3, targets: [t(LAMP, "Light", 0, true, 25), t(RACK, "Switch", 2, false)] },
+    { id: "s-evening", name: "Evening lights", fadeSeconds: 3, targets: [t(LAMP, "Light", 0, true, 25), t(RACK, "Switch", 2, false),
+      { deviceId: ACCENT, kind: "Rgbw", index: 0, on: true, brightness: 30, rgb: [255, 140, 0], white: 60 }] },
     { id: "s-listen", name: "Listen only", fadeSeconds: null, targets: [t(RACK, "Switch", 0, false), t(RACK, "Switch", 1, true), t(ANT, "Switch", 0, true), t(ANT, "Switch", 2, true)] },
     { id: "s-standby", name: "Standby", fadeSeconds: 5, targets: [t(RACK, "Switch", 0, false), t(RACK, "Switch", 2, false), t(LIN, "Switch", 0, false), t(LAMP, "Light", 0, true, 15), t(OVER, "Light", 0, false)] },
   ];
@@ -131,7 +140,7 @@ function exampleRules(): Rule[] {
     { id: "r-stop", name: "Operating off when Zeus closes", enabled: true, trigger: { type: "zeusStop" },
       action: { type: "scene", sceneId: "s-operating", mode: "off" } },
     { id: "r-onair", name: "On Air sign", enabled: true, trigger: { type: "tx" },
-      action: { type: "output", deviceId: ONAIR, kind: "Light", index: 0, on: true, brightness: 100, rampSeconds: 0.5 },
+      action: { type: "output", deviceId: ONAIR, kind: "Rgb", index: 0, on: true, brightness: 100, rgb: [255, 0, 0], rampSeconds: 0.5 },
       endAction: { type: "off" }, debounceSeconds: 0.3, delaySeconds: 0, endDelaySeconds: 3 },
     { id: "r-6m", name: "6 m preamp", enabled: true, trigger: { type: "band", bands: ["6m"] },
       action: { type: "output", deviceId: ANT, kind: "Switch", index: 0, on: true }, endAction: { type: "restore" },
@@ -151,7 +160,7 @@ const exampleLayout = (): Layout => ({
   columns: 3,
   order: [
     ["shellypro4pm-f008d1d8b8b8", "shellydimmerg3-84fce63a1b2c", "shellypro3-c8f09e1a2b3c",
-     "shellyem-c45bbe6a1f22", "shellywalldimmer-b0a7329e11c4", "shellydimmerg3-84fce63a9e01",
+     "shellyem-c45bbe6a1f22", "shellywalldimmer-b0a7329e11c4", "shellyplusrgbwpm-84fce63a9e01", "shellyplusrgbwpm-84fce63a77aa",
      "shelly1g4-7c2c6771eea0", "shelly1-98f4ab12cd34", "shelly1g4-7c2c6771f310",
      "ogemray25a-a1b2c3d4e5f6", "shellyplugus-c049ef8a2b10"],
   ],
@@ -265,6 +274,8 @@ function measure(devices: DeviceView[]) {
     if (d.status.health !== "Online") continue;
     for (const ch of d.status.channels) {
       if (!ch.metered) continue;
+      // Colour LED controllers run from a DC supply: their voltage isn't mains.
+      if (ch.kind === "Rgb" || ch.kind === "Rgbw") { ch.limits = limitsFor(d, ch); ch.alerts = []; continue; }
       const jitter = ch.kind === "Meter" ? (ch.index ? -0.5 : 0) : 0;
       ch.voltageV = +(rd.mainsV + jitter).toFixed(1);
       if (ch.name === "Amplifier" && ch.on) { ch.currentA = rd.ampOverload ? 13.9 : 2.57; ch.powerW = +(ch.currentA * ch.voltageV * 0.98).toFixed(1); }
@@ -355,14 +366,16 @@ function log(text: string, ok = true) { eng.log.unshift({ at: now(), text, ok })
 function chOf(deviceId: string, kind: string, index: number) {
   return state.devices.find((d) => d.deviceId === deviceId)?.status.channels.find((c) => c.kind === kind && c.index === index);
 }
-function setCh(deviceId: string, kind: string, index: number, on: boolean, brightness?: number | null) {
+function setCh(deviceId: string, kind: string, index: number, on: boolean, brightness?: number | null, rgb?: [number, number, number] | null, white?: number | null) {
   const d = state.devices.find((x) => x.deviceId === deviceId);
   const ch = chOf(deviceId, kind, index);
   if (!d || !ch) return `a removed output`;
   if (d.status.health !== "Online") throw new Error(`${d.displayName} didn't answer`);
   ch.on = on;
-  if (ch.kind === "Light" && on && brightness) ch.brightness = brightness;
-  if (ch.kind === "Light" && ch.metered) ch.powerW = ch.on ? +((ch.brightness ?? 0) * 0.114).toFixed(1) : 0;
+  if (ch.kind !== "Switch" && on && brightness) ch.brightness = brightness;
+  if (on && rgb) ch.rgb = rgb;
+  if (on && white != null) ch.white = white;
+  if (ch.kind !== "Switch" && ch.metered) ch.powerW = ch.on ? +((ch.brightness ?? 0) * 0.16).toFixed(1) : 0;
   applyPower(ch);
   return ch.name ?? d.displayName;
 }
@@ -377,14 +390,14 @@ function snapshot(a: Action): Snapshot {
 }
 function perform(a: Action): string {
   if (a.type === "output") {
-    const name = setCh(a.deviceId, a.kind, a.index, a.on, a.brightness);
+    const name = setCh(a.deviceId, a.kind, a.index, a.on, a.brightness, a.rgb, a.white);
     return `${name} ${a.on ? "on" : "off"}${a.on && a.brightness && a.kind === "Light" ? ` at ${a.brightness}%` : ""}`;
   }
   const scene = state.scenes.find((s) => s.id === a.sceneId);
   if (!scene) throw new Error("scene was deleted");
   let ok = 0; const bad: string[] = [];
   for (const tg of scene.targets) {
-    try { setCh(tg.deviceId, tg.kind, tg.index, a.mode === "off" ? false : tg.on, tg.brightness); ok++; }
+    try { setCh(tg.deviceId, tg.kind, tg.index, a.mode === "off" ? false : tg.on, tg.brightness, tg.rgb, tg.white); ok++; }
     catch (e) { bad.push((e as Error).message); }
   }
   if (bad.length) throw new Error(`${scene.name}: ${ok} of ${scene.targets.length} outputs. ${[...new Set(bad)].join(", ")}.`);
@@ -611,12 +624,17 @@ const api: ZeusPluginApi = {
       const results = scene!.targets.map((tg) => {
         const d = devices.find((x) => x.deviceId === tg.deviceId);
         if (!d) return { deviceId: tg.deviceId, channelKey: "", ok: false, error: "Device was removed from PowerStation." };
-        const key = `${tg.kind === "Light" ? "light" : "switch"}:${tg.index}`;
+        const key = `${tg.kind === "Switch" ? "switch" : tg.kind.toLowerCase()}:${tg.index}`;
         if (d.status.health !== "Online") return { deviceId: d.deviceId, channelKey: key, ok: false, error: `${d.displayName}: ${d.host} didn't answer in time.` };
         const ch = d.status.channels.find((c) => c.key === key);
         if (ch) {
           ch.on = mode === "off" ? false : tg.on;
-          if (ch.kind === "Light") { if (mode === "apply" && tg.on && tg.brightness) ch.brightness = tg.brightness; ch.powerW = ch.on ? +((ch.brightness ?? 0) * 0.114).toFixed(1) : 0; }
+          if (ch.kind !== "Switch") {
+            if (mode === "apply" && tg.on && tg.brightness) ch.brightness = tg.brightness;
+            if (mode === "apply" && tg.on && tg.rgb) ch.rgb = tg.rgb;
+            if (mode === "apply" && tg.on && tg.white != null) ch.white = tg.white;
+            ch.powerW = ch.on ? +((ch.brightness ?? 0) * 0.114).toFixed(1) : 0;
+          }
           applyPower(ch);
         }
         return { deviceId: d.deviceId, channelKey: key, ok: true, error: null };
@@ -676,7 +694,7 @@ const api: ZeusPluginApi = {
       }
       return json(d);
     }
-    const cm = rest.match(/^\/channels\/(switch|light)\/(\d+)$/);
+    const cm = rest.match(/^\/channels\/(switch|light|rgb|rgbw)\/(\d+)$/);
     if (cm) {
       if (d.status.health !== "Online") return json({ error: `${d.host} didn't answer in time.`, kind: "unreachable" }, 504);
       const ch = d.status.channels.find((x) => x.kind.toLowerCase() === cm[1] && x.index === +cm[2])!;
@@ -684,7 +702,8 @@ const api: ZeusPluginApi = {
       if (body.action === "off") ch.on = false;
       if (body.action === "toggle") ch.on = !ch.on;
       if (body.action === "brightness") { ch.brightness = body.brightness; ch.on = body.brightness > 0; }
-      if (ch.kind === "Light" && ch.metered) ch.powerW = ch.on ? +((ch.brightness ?? 0) * 0.114).toFixed(1) : 0;
+      if (body.action === "color") { ch.rgb = body.rgb; if (body.white != null) ch.white = body.white; ch.on = true; }
+      if (ch.kind !== "Switch" && ch.metered) ch.powerW = ch.on ? +((ch.brightness ?? 0) * 0.114).toFixed(1) : 0;
       applyPower(ch);
       return json(d);
     }

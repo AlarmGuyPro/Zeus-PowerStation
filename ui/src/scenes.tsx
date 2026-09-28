@@ -13,6 +13,7 @@ import {
   type SceneTarget,
 } from "./api";
 import { Notice, channelLabel, type StatusState } from "./shared";
+import { ColorPicker, isColor, isDimmable, type Rgb } from "./color";
 import { c } from "./styles";
 
 const message = (err: unknown) => (err instanceof ApiError ? err.message : String(err));
@@ -267,7 +268,8 @@ function SceneEditor({
             kind: ch.kind,
             index: ch.index,
             on: ch.on,
-            brightness: ch.kind === "Light" && ch.on && ch.brightness ? Math.round(ch.brightness) : null,
+            brightness: isDimmable(ch.kind) && ch.on && ch.brightness ? Math.round(ch.brightness) : null,
+            ...(isColor(ch.kind) && ch.on ? { rgb: ch.rgb ?? [255, 255, 255], white: ch.kind === "Rgbw" ? ch.white ?? 0 : null } : {}),
           });
     });
   }
@@ -445,7 +447,10 @@ function SceneEditor({
                             kind: ch.kind,
                             index: ch.index,
                             on: true,
-                            brightness: ch.kind === "Light" ? Math.round(ch.brightness || 100) : null,
+                            brightness: isDimmable(ch.kind) ? Math.round(ch.brightness || 100) : null,
+                            ...(isColor(ch.kind)
+                              ? { rgb: ch.rgb ?? [255, 255, 255], white: ch.kind === "Rgbw" ? ch.white ?? 0 : null }
+                              : {}),
                           });
                       });
                     }}
@@ -459,14 +464,20 @@ function SceneEditor({
                         onChange={(e) => {
                           const on = e.currentTarget.value === "on";
                           update((targets) =>
-                            targets.set(key, { ...t, on, brightness: on && t.kind === "Light" ? t.brightness ?? 100 : null }),
+                            targets.set(key, {
+                              ...t,
+                              on,
+                              brightness: on && isDimmable(t.kind) ? t.brightness ?? 100 : null,
+                              rgb: on && isColor(t.kind) ? t.rgb ?? [255, 255, 255] : null,
+                              white: on && t.kind === "Rgbw" ? t.white ?? 0 : null,
+                            }),
                           );
                         }}
                       >
                         <option value="on">On</option>
                         <option value="off">Off</option>
                       </select>
-                      {t.kind === "Light" && t.on && (
+                      {isDimmable(t.kind) && t.on && (
                         <>
                           <input
                             type="number"
@@ -487,6 +498,17 @@ function SceneEditor({
                     </span>
                   ) : (
                     <span className={c("pick-unit")}>Not in scene</span>
+                  )}
+                  {t && isColor(t.kind) && t.on && (
+                    <div className={c("pick-color")}>
+                      <ColorPicker
+                        compact
+                        label={label}
+                        withWhite={t.kind === "Rgbw"}
+                        value={{ rgb: (t.rgb ?? [255, 255, 255]) as Rgb, white: t.white }}
+                        onChange={(v) => update((targets) => targets.set(key, { ...t, rgb: v.rgb, white: v.white ?? null }))}
+                      />
+                    </div>
                   )}
                 </div>
               );

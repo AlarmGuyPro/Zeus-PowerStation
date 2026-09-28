@@ -153,7 +153,11 @@ export const fmt = {
   temp: (t: number) => `${t.toFixed(0)} °C`,
 };
 
+export const KIND_LABEL: Record<string, string> = {
+  Switch: "Output", Light: "Dimmer", Meter: "Meter", Rgb: "RGB light", Rgbw: "RGBW light",
+};
+
 export function channelLabel(ch: { name?: string | null; kind: string; index: number }) {
   if (ch.name) return ch.name;
-  return `${ch.kind === "Light" ? "Dimmer" : ch.kind === "Meter" ? "Meter" : "Output"} ${ch.index + 1}`;
+  return `${KIND_LABEL[ch.kind] ?? "Output"} ${ch.index + 1}`;
 }
