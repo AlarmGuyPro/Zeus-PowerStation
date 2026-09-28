@@ -230,6 +230,27 @@ function applyPower(ch: ChannelState) {
 }
 
 
+// ---- pretend debug log
+const dbg = {
+  recordAll: false,
+  entries: (() => {
+    const at = (s: number) => new Date(Date.now() - s * 1000).toISOString();
+    const rows = [
+      { kind: "http", deviceId: null, deviceName: null, host: "10.0.20.36", method: "/shelly", status: 200, ms: 38,
+        response: '{"name":null,"id":"shellyplusrgbwpm-a0b1c2d3e4f5","mac":"A0B1C2D3E4F5","gen":2,"app":"PlusRGBWPM","ver":"1.4.4","auth_en":false,"profile":"rgbw"}' },
+      { kind: "rpc", deviceId: "shellyplusrgbwpm-84fce63a77aa", deviceName: "Shack accent strip", host: "10.0.20.35", method: "RGBW.Set", status: 200, ms: 61,
+        request: '{"id":0,"on":true,"rgb":[255,140,0],"white":60,"brightness":30,"transition_duration":3,"tag":"zeus"}', response: '{"id":1,"src":"shellyplusrgbwpm-84fce63a77aa","result":null}' },
+      { kind: "rpc", deviceId: "ogemray25a-a1b2c3d4e5f6", deviceName: "Linear PSU (25A)", host: "10.0.30.40", method: "Shelly.GetStatus", ms: 4003,
+        error: "Unreachable: 10.0.30.40 didn't answer in time. Check the address and that this computer can reach that network.", routine: true },
+      { kind: "rpc", deviceId: "shellyplugus-c049ef8a2b10", deviceName: "Soldering station", host: "10.0.20.52", method: "Shelly.GetStatus", status: 401, ms: 22,
+        error: "Unauthorized: This device has a password set. Enter it in PowerStation setup.", routine: true },
+      { kind: "rpc", deviceId: "shellypro4pm-f008d1d8b8b8", deviceName: "Shack Rack", host: "10.0.20.14", method: "Switch.Set", status: 200, ms: 45,
+        request: '{"id":2,"on":true,"tag":"zeus"}', response: '{"id":7,"src":"shellypro4pm-f008d1d8b8b8","result":{"was_on":false}}' },
+    ];
+    return rows.map((r, i) => ({ seq: i + 1, at: at(60 - i * 9), routine: false, ok: !("error" in r), request: null, response: null, status: null, error: null, ...r }));
+  })() as any[],
+};
+
 // ---- pretend readings: normal ranges, alerts and the event log
 const RATED: Record<string, number | null> = { Pro4PM: 16, PlugUS: 15, Ogemray25A: 25, ShellyEM: 50, DimmerG3: null, WallDimmer: null };
 const rd = {
@@ -561,6 +582,13 @@ const api: ZeusPluginApi = {
     if (path === "/readings/events" && method === "DELETE") { rd.view.events = rd.view.events.filter((e) => !e.end); return json(rd.view); }
     if (method !== "GET" && !path.startsWith("/discovery") && path !== "/layout") activity("PowerStation");
 
+    if (path.startsWith("/debug/log") && method === "GET") {
+      const since = Number(new URLSearchParams(path.split("?")[1] ?? "").get("since") ?? 0);
+      return json({ recordAll: dbg.recordAll, recordAllUntil: dbg.recordAll ? new Date(Date.now() + 30 * 60000).toISOString() : null,
+        latest: dbg.entries.at(-1)?.seq ?? 0, total: dbg.entries.length, entries: dbg.entries.filter((e) => e.seq > since) });
+    }
+    if (path === "/debug" && method === "PUT") { dbg.recordAll = !!body?.recordAll; return json({ recordAll: dbg.recordAll }); }
+    if (path === "/debug/log" && method === "DELETE") { dbg.entries = []; return json({ cleared: true }); }
     if (path === "/automation" && method === "PUT") { if (typeof body?.paused === "boolean") { eng.paused = body.paused; log(body.paused ? "Automations paused" : "Automations running"); } return json(automationView()); }
     if (path === "/automation/activity") { log("I'm here"); return json(automationView()); }
     if (path === "/automation/extend") {

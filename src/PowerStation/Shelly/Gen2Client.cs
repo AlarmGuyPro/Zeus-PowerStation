@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using KQ4WLR.PowerStation.Model;
+using KQ4WLR.PowerStation.Services;
 
 namespace KQ4WLR.PowerStation.Shelly;
 
@@ -54,11 +55,16 @@ public sealed class Gen2Client : IShellyClient
     private Dictionary<string, string> _deviceNames = new();
     private DateTimeOffset _namesFetchedAt = DateTimeOffset.MinValue;
 
-    public Gen2Client(HttpClient http, string host, string? ha1)
+    private readonly TrafficLog? _log;
+    private readonly string? _deviceId;
+
+    public Gen2Client(HttpClient http, string host, string? ha1, TrafficLog? log = null, string? deviceId = null)
     {
         _http = http;
         _host = host;
         _ha1 = string.IsNullOrEmpty(ha1) ? null : ha1;
+        _log = log;
+        _deviceId = deviceId;
     }
 
     /// <summary>How long channel names read from the device are cached.</summary>
@@ -70,16 +76,36 @@ public sealed class Gen2Client : IShellyClient
     /// Reads the unauthenticated <c>/shelly</c> endpoint, which every Shelly
     /// generation serves even when authentication is enabled.
     /// </summary>
-    public static async Task<DeviceIdentity> IdentifyAsync(HttpClient http, string host, CancellationToken ct)
+    public static async Task<DeviceIdentity> IdentifyAsync(HttpClient http, string host, CancellationToken ct, TrafficLog? log = null)
+    {
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        int? status = null;
+        string? body = null;
+        try
+        {
+            var id = await IdentifyCoreAsync(http, host, ct, (s, b) => { status = s; body = b; }).ConfigureAwait(false);
+            log?.Add("http", id.DeviceId, host, "/shelly", null, status, body, null, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            return id;
+        }
+        catch (Exception ex) when (!(ex is OperationCanceledException && ct.IsCancellationRequested))
+        {
+            log?.Add("http", null, host, "/shelly", null, status, body, ex.Message, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            throw;
+        }
+    }
+
+    private static async Task<DeviceIdentity> IdentifyCoreAsync(HttpClient http, string host, CancellationToken ct, Action<int, string?> seen)
     {
         JsonObject info;
         try
         {
             using var response = await http.GetAsync(new Uri($"http://{host}/shelly"), ct).ConfigureAwait(false);
+            seen((int)response.StatusCode, null);
             if (!response.IsSuccessStatusCode)
                 throw new ShellyException(ShellyErrorKind.Protocol,
                     $"{host} answered HTTP {(int)response.StatusCode} on /shelly. Is this a Shelly device?");
             var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            seen((int)response.StatusCode, body);
             info = JsonNode.Parse(body) as JsonObject
                    ?? throw new ShellyException(ShellyErrorKind.Protocol, $"{host} didn't return Shelly device info.");
         }
@@ -135,13 +161,13 @@ public sealed class Gen2Client : IShellyClient
     /// The realm comes from the device's own challenge, so the stored HA1
     /// always matches what the firmware expects.
     /// </summary>
-    public static async Task<string> DeriveHa1Async(HttpClient http, string host, string password, CancellationToken ct)
+    public static async Task<string> DeriveHa1Async(HttpClient http, string host, string password, CancellationToken ct, TrafficLog? log = null)
     {
         var challenge = await GetChallengeAsync(http, host, ct).ConfigureAwait(false)
             ?? throw new ShellyException(ShellyErrorKind.Protocol,
                 "The device didn't ask for a password, so there is nothing to check.");
         var ha1 = ShellyDigest.ComputeHa1(challenge.Realm, password);
-        var probe = new Gen2Client(http, host, ha1);
+        var probe = new Gen2Client(http, host, ha1, log);
         await probe.CallAsync("Shelly.GetDeviceInfo", null, ct).ConfigureAwait(false);
         await probe.CallAsync("Sys.GetStatus", null, ct).ConfigureAwait(false);
         return ha1;
@@ -256,7 +282,31 @@ public sealed class Gen2Client : IShellyClient
 
     // ---------------------------------------------------------------- transport
 
+    /// <summary>What came back, for the traffic log.</summary>
+    private sealed class Seen { public int? Status; public string? Body; }
+
     internal async Task<JsonNode?> CallAsync(string method, JsonObject? parameters, CancellationToken ct)
+    {
+        if (_log is null) return await CallCoreAsync(method, parameters, ct, new Seen()).ConfigureAwait(false);
+        var seen = new Seen();
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        try
+        {
+            var result = await CallCoreAsync(method, parameters, ct, seen).ConfigureAwait(false);
+            _log.Add("rpc", _deviceId, _host, method, parameters?.ToJsonString(), seen.Status, seen.Body, null,
+                System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            return result;
+        }
+        catch (Exception ex) when (!(ex is OperationCanceledException && ct.IsCancellationRequested))
+        {
+            _log.Add("rpc", _deviceId, _host, method, parameters?.ToJsonString(), seen.Status, seen.Body,
+                $"{(ex is ShellyException se ? se.Kind.ToString() : ex.GetType().Name)}: {ex.Message}",
+                System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            throw;
+        }
+    }
+
+    private async Task<JsonNode?> CallCoreAsync(string method, JsonObject? parameters, CancellationToken ct, Seen seen)
     {
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
@@ -284,6 +334,7 @@ public sealed class Gen2Client : IShellyClient
 
                 using (response)
                 {
+                    seen.Status = (int)response.StatusCode;
                     if (response.StatusCode == HttpStatusCode.Unauthorized)
                     {
                         if (_ha1 is null)
@@ -304,6 +355,7 @@ public sealed class Gen2Client : IShellyClient
                             "The device is rate-limiting requests (too many failed logins?). Try again shortly.");
 
                     var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                    seen.Body = body;
                     return ParseRpcResponse(method, response.StatusCode, body);
                 }
             }

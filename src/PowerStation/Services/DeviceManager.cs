@@ -82,9 +82,13 @@ public sealed class DeviceManager : IAsyncDisposable
         _logger = logger;
         _time = time ?? TimeProvider.System;
         _checkHost = checkHost ?? HostValidator.CheckLocalAsync;
+        Traffic = new TrafficLog(_time);
     }
 
     public PowerStationOptions Options => _options;
+
+    /// <summary>Traffic with the devices, for the Debug section.</summary>
+    public TrafficLog Traffic { get; }
 
     /// <summary>Saved scenes; available after <see cref="LoadAsync"/>.</summary>
     public SceneManager Scenes { get; private set; } = null!;
@@ -273,8 +277,19 @@ public sealed class DeviceManager : IAsyncDisposable
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
         catch (Exception ex)
         {
+            // Something PowerStation didn't expect (a status it can't read, say). Show it on the
+            // card instead of leaving the device stuck on "Connecting…", and log the detail.
             _logger.LogError(ex, "PowerStation: unexpected error polling {Device}", entry.Record.DeviceId);
-            entry.NextPoll = _time.GetUtcNow() + TimeSpan.FromMilliseconds(_options.MaxBackoffMs);
+            Traffic.Event(entry.Record.DeviceId, "Reading status", $"{ex.GetType().Name}: {ex.Message}");
+            entry.Failures++;
+            entry.Status = entry.Status with
+            {
+                Health = DeviceHealth.Error,
+                Message = $"PowerStation couldn't read this device's status ({ex.GetType().Name}: {ex.Message}). " +
+                          "Setup › Debug shows the device's reply.",
+                LastPolled = _time.GetUtcNow(),
+            };
+            entry.NextPoll = _time.GetUtcNow() + NextDelay(entry.Failures);
         }
         finally
         {
@@ -371,8 +386,21 @@ public sealed class DeviceManager : IAsyncDisposable
         PreviousHost = e.Record.PreviousHost,
         HostChangedAt = e.Record.HostChangedAt,
         LineToLine = e.Record.LineToLine,
-        Status = Decorate is { } decorate ? e.Status with { Channels = decorate(e.Record, e.Status.Channels) } : e.Status,
+        Status = DecorateSafely(e),
     };
+
+    private DeviceStatus DecorateSafely(Entry e)
+    {
+        if (Decorate is not { } decorate) return e.Status;
+        try { return e.Status with { Channels = decorate(e.Record, e.Status.Channels) }; }
+        catch (Exception ex)
+        {
+            // Readings are extras; never let them hide the device.
+            _logger.LogError(ex, "PowerStation: couldn't add readings for {Device}", e.Record.DeviceId);
+            Traffic.Event(e.Record.DeviceId, "Checking readings", $"{ex.GetType().Name}: {ex.Message}");
+            return e.Status;
+        }
+    }
 
     private Entry Find(string deviceId) =>
         _entries.TryGetValue(deviceId, out var e)
@@ -385,13 +413,13 @@ public sealed class DeviceManager : IAsyncDisposable
     public async Task<DeviceIdentity> ProbeAsync(string? host, CancellationToken ct)
     {
         var normalized = await ValidateHostAsync(host, ct).ConfigureAwait(false);
-        return await Gen2Client.IdentifyAsync(_http, normalized, ct).ConfigureAwait(false);
+        return await Gen2Client.IdentifyAsync(_http, normalized, ct, Traffic).ConfigureAwait(false);
     }
 
     public async Task<DeviceView> AddAsync(AddDeviceRequest request, CancellationToken ct)
     {
         var host = await ValidateHostAsync(request.Host, ct).ConfigureAwait(false);
-        var identity = await Gen2Client.IdentifyAsync(_http, host, ct).ConfigureAwait(false);
+        var identity = await Gen2Client.IdentifyAsync(_http, host, ct, Traffic).ConfigureAwait(false);
 
         string? ha1 = null, gen1User = null, gen1Password = null;
         if (identity.AuthRequired)
@@ -402,12 +430,12 @@ public sealed class DeviceManager : IAsyncDisposable
             if (identity.Generation == 1)
             {
                 gen1User = CleanUser(request.Username);
-                await Gen1Client.VerifyAsync(_http, host, gen1User, request.Password, ct).ConfigureAwait(false);
+                await Gen1Client.VerifyAsync(_http, host, gen1User, request.Password, ct, Traffic).ConfigureAwait(false);
                 gen1Password = request.Password;
             }
             else
             {
-                ha1 = await Gen2Client.DeriveHa1Async(_http, host, request.Password, ct).ConfigureAwait(false);
+                ha1 = await Gen2Client.DeriveHa1Async(_http, host, request.Password, ct, Traffic).ConfigureAwait(false);
             }
         }
 
@@ -470,7 +498,7 @@ public sealed class DeviceManager : IAsyncDisposable
         if (request.Host is not null)
         {
             var host = await ValidateHostAsync(request.Host, ct).ConfigureAwait(false);
-            var identity = await Gen2Client.IdentifyAsync(_http, host, ct).ConfigureAwait(false);
+            var identity = await Gen2Client.IdentifyAsync(_http, host, ct, Traffic).ConfigureAwait(false);
             if (!string.Equals(identity.DeviceId, current.DeviceId, StringComparison.Ordinal))
                 throw new PowerStationRequestException(409,
                     $"{host} is a different device ({identity.DeviceId}). Add it as a new device instead.");
@@ -483,12 +511,12 @@ public sealed class DeviceManager : IAsyncDisposable
             if (updated.Generation == 1)
             {
                 var user = CleanUser(request.Username ?? updated.Gen1User);
-                await Gen1Client.VerifyAsync(_http, updated.Host, user, request.Password, ct).ConfigureAwait(false);
+                await Gen1Client.VerifyAsync(_http, updated.Host, user, request.Password, ct, Traffic).ConfigureAwait(false);
                 updated = updated with { Gen1User = user, Gen1Password = request.Password, AuthRequired = true };
             }
             else
             {
-                var ha1 = await Gen2Client.DeriveHa1Async(_http, updated.Host, request.Password, ct).ConfigureAwait(false);
+                var ha1 = await Gen2Client.DeriveHa1Async(_http, updated.Host, request.Password, ct, Traffic).ConfigureAwait(false);
                 updated = updated with { Ha1 = ha1, AuthRequired = true };
             }
         }
@@ -765,8 +793,8 @@ public sealed class DeviceManager : IAsyncDisposable
 
     private IShellyClient CreateClient(DeviceRecord record) =>
         record.Generation == 1
-            ? new Gen1Client(_http, record.Host, record.Gen1User, record.Gen1Password)
-            : new Gen2Client(_http, record.Host, record.Ha1);
+            ? new Gen1Client(_http, record.Host, record.Gen1User, record.Gen1Password, Traffic, record.DeviceId)
+            : new Gen2Client(_http, record.Host, record.Ha1, Traffic, record.DeviceId);
 
     private static string CleanUser(string? user)
     {
