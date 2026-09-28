@@ -98,6 +98,10 @@ public sealed class Gen1Client : IShellyClient
     public Task SetSafetyTimerAsync(ChannelKind kind, int index, int seconds, CancellationToken ct) =>
         GetJsonAsync($"/{Path(kind)}/{index}?turn=on&timer={Math.Max(1, seconds).ToString(CultureInfo.InvariantCulture)}", ct);
 
+    public Task SetColorAsync(ChannelKind kind, int index, bool? on, double? brightness, int[]? rgb, double? white,
+        double? transitionSeconds, CancellationToken ct) =>
+        throw new ShellyException(ShellyErrorKind.Unsupported, "Colour control isn't supported on Gen1 devices yet.");
+
     private static string Path(ChannelKind kind) => kind switch
     {
         ChannelKind.Light => "light",

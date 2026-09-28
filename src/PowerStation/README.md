@@ -3,14 +3,20 @@
 Control and monitor the Shelly relays, plugs, dimmers and energy meters in
 your shack from inside Zeus, and let Zeus switch them for you. By KQ4WLR.
 
-## What it does (version 0.5.1)
+## What it does (version 0.6.0)
 
 - **Turn outputs on and off** on Shelly Gen1, Gen2, Gen3, Gen4 and "Powered
   by Shelly" devices: Shelly 1 / 1PM / 2.5 (relay mode), Plug and Plug S,
   Dimmer 1 and 2, ShellyEM, Plus and Pro relays, Pro 3, Pro 4PM, Plug US,
-  Dimmer Gen3, wall dimmers, Ogemray 25A and similar.
+  Dimmer Gen3, wall dimmers, Plus RGBW PM, Ogemray 25A and similar.
 - **Dim lights** on a drawing of the wall dimmer: click a level dot, the
   square to switch on and off, or − and + for 10% steps.
+- **Colour lights**: a Shelly Plus RGBW PM in RGB or RGBW mode gets a colour
+  tile with an LED-strip preview, on/off, a level slider, ten preset colours
+  plus any custom colour, and a white slider in RGBW mode. Scenes and rules
+  can set a colour, so an on-air sign can light red while you transmit. In
+  Light mode the RGBW PM shows as four dimmers. Choose the mode in the
+  Shelly app.
 - **Scenes**: a named set of outputs and dimmer levels in one click, with an
   optional fade, and **All off**. They sit in their own box at the top of the
   panel.
@@ -114,6 +120,8 @@ Timers are only ever renewed on an output a poll has just seen on.
   nothing, such as a tripped supply or a blown fuse.
 - A reading must stay out of range for 5 seconds (adjustable) before it
   counts, so switch-on inrush doesn't.
+- Colour LED controllers run from a 12/24 V DC supply, so their voltage is
+  shown but not checked against mains.
 - These are warnings only. The Shelly's own overpower and overvoltage
   protection does any switching.
 

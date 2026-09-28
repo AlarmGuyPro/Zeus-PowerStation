@@ -41,6 +41,10 @@ public sealed record RuleAction
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? On { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public double? Brightness { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public double? RampSeconds { get; init; }
+    /// <summary>Colour lights: [r, g, b] 0-255.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int[]? Rgb { get; init; }
+    /// <summary>RGBW: white 0-255.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public double? White { get; init; }
 }
 
 public sealed record Rule
@@ -540,7 +544,7 @@ public sealed class AutomationService : IAsyncDisposable
                     var now = _devices.GetChannel(before.DeviceId, before.ChannelKey);
                     if (now is null) { skipped++; continue; }
                     var untouched = now.On == set.On &&
-                                    (set.Kind != ChannelKind.Light || !set.On || set.Brightness is null ||
+                                    (!set.Kind.IsDimmable() || !set.On || set.Brightness is null ||
                                      Math.Abs((now.Brightness ?? 0) - set.Brightness.Value) <= 2);
                     if (untouched) back.Add(before);
                     else skipped++;
@@ -556,7 +560,7 @@ public sealed class AutomationService : IAsyncDisposable
             case "off":
                 return await PerformAsync(rule, rule.Action.Type == "scene"
                     ? rule.Action with { Mode = "off" }
-                    : rule.Action with { On = false, Brightness = null }, isEnd: true, ct).ConfigureAwait(false);
+                    : rule.Action with { On = false, Brightness = null, Rgb = null, White = null }, isEnd: true, ct).ConfigureAwait(false);
 
             case "scene":
             {
@@ -564,7 +568,7 @@ public sealed class AutomationService : IAsyncDisposable
                             ?? throw new PowerStationRequestException(404, "The scene this rule uses was deleted.");
                 var mode = action.Mode == "off" ? "off" : "apply";
                 if (!isEnd) Remember(rule, mode == "off"
-                    ? scene.Targets.Select(t => t with { On = false, Brightness = null })
+                    ? scene.Targets.Select(t => t with { On = false, Brightness = null, Rgb = null, White = null })
                     : scene.Targets);
                 var result = await _devices.Scenes.RunAsync(scene.Id, new SceneRunRequest(mode), ct).ConfigureAwait(false);
                 var verb = mode == "off" ? "all off" : "applied";
@@ -581,14 +585,17 @@ public sealed class AutomationService : IAsyncDisposable
                     Kind = action.Kind ?? ChannelKind.Switch,
                     Index = action.Index ?? 0,
                     On = action.On ?? true,
-                    Brightness = action.Kind == ChannelKind.Light && action.On == true ? action.Brightness : null,
+                    Brightness = (action.Kind ?? ChannelKind.Switch).IsDimmable() && action.On == true ? action.Brightness : null,
+                    Rgb = action.On == true ? action.Rgb : null,
+                    White = action.On == true ? action.White : null,
                 };
                 if (!isEnd) Remember(rule, [target]);
                 var (results, _) = await _devices.ApplyTargetsAsync([target], action.RampSeconds, ct).ConfigureAwait(false);
                 var name = _devices.GetChannel(target.DeviceId, target.ChannelKey)?.Name ?? _devices.DisplayName(target.DeviceId);
                 var r = results[0];
                 if (!r.Ok) return (false, r.Error ?? "failed");
-                return (true, $"{name} {(target.On ? "on" : "off")}{(target.Brightness is { } b ? $" at {b:0}%" : "")}");
+                var colour = target.Rgb is { } c ? $" #{c[0]:x2}{c[1]:x2}{c[2]:x2}" : "";
+                return (true, $"{name} {(target.On ? "on" : "off")}{colour}{(target.Brightness is { } b ? $" at {b:0}%" : "")}");
             }
 
             default:
@@ -605,7 +612,13 @@ public sealed class AutomationService : IAsyncDisposable
         {
             var now = _devices.GetChannel(t.DeviceId, t.ChannelKey);
             if (now is null) continue;
-            outputs.Add((t with { On = now.On, Brightness = t.Kind == ChannelKind.Light && now.On ? now.Brightness : null }, t));
+            outputs.Add((t with
+            {
+                On = now.On,
+                Brightness = t.Kind.IsDimmable() && now.On ? now.Brightness : null,
+                Rgb = t.Kind.IsColor() && now.On ? now.Rgb : null,
+                White = t.Kind == ChannelKind.Rgbw && now.On ? now.White : null,
+            }, t));
         }
         lock (_lock) StateOf(rule.Id).Snapshot = new Snapshot(outputs);
     }
@@ -772,11 +785,14 @@ public sealed class AutomationService : IAsyncDisposable
                     throw Bad("Pick an output.");
                 if (a.Brightness is not null and (< 1 or > 100)) throw Bad("Levels must be between 1 and 100%.");
                 if (a.RampSeconds is not null and (< 0 or > 600)) throw Bad("Ramp must be between 0 and 600 seconds.");
+                var color = SceneManager.ValidateColor(a.Kind.Value, a.On ?? true, a.Rgb, a.White);
                 return new RuleAction
                 {
                     Type = "output", DeviceId = a.DeviceId, Kind = a.Kind, Index = a.Index, On = a.On ?? true,
-                    Brightness = a.Kind == ChannelKind.Light && a.On != false ? a.Brightness : null,
-                    RampSeconds = a.Kind == ChannelKind.Light && a.RampSeconds is > 0 ? a.RampSeconds : null,
+                    Brightness = a.Kind.Value.IsDimmable() && a.On != false ? a.Brightness : null,
+                    RampSeconds = a.Kind.Value.IsDimmable() && a.RampSeconds is > 0 ? a.RampSeconds : null,
+                    Rgb = color.Rgb,
+                    White = color.White,
                 };
             default:
                 throw Bad($"Unknown action \"{a.Type}\".");

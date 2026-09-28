@@ -18,6 +18,7 @@ import {
   type TriggerType,
 } from "./api";
 import { Notice, PanelRoot, channelLabel, useStatus, type StatusState } from "./shared";
+import { ColorPicker, describeColor, isColor, isDimmable, type Rgb } from "./color";
 import { c } from "./styles";
 
 const message = (err: unknown) => (err instanceof ApiError ? err.message : String(err));
@@ -76,9 +77,10 @@ function describeAction(a: Action, devices: DeviceView[], scenes: Scene[]) {
   }
   const name = outputName(devices, a);
   if (!a.on) return `turn off ${name}`;
-  const level = a.kind === "Light" && a.brightness ? ` at ${a.brightness}%` : "";
+  const level = isDimmable(a.kind) && a.brightness ? ` at ${a.brightness}%` : "";
+  const colour = isColor(a.kind) && a.rgb ? ` ${describeColor({ rgb: a.rgb, white: a.white })}` : "";
   const ramp = a.rampSeconds ? `, ${a.rampSeconds}s ramp` : "";
-  return `turn on ${name}${level}${ramp}`;
+  return `turn on ${name}${colour}${level}${ramp}`;
 }
 
 function describeEnd(e: EndAction | null | undefined, devices: DeviceView[], scenes: Scene[]) {
@@ -360,9 +362,14 @@ function RuleEditor({
       const next: Draft = { ...d, trigger: defaultTrigger(type) };
       if (type === "tx") {
         // On-air light: one output, off again shortly after TX ends.
-        const first = outputs.find((o) => o.ch.kind === "Light") ?? outputs[0];
-        if (first && (d.action.type !== "output" || d.action.kind !== "Light"))
-          next.action = { type: "output", deviceId: first.d.deviceId, kind: first.ch.kind, index: first.ch.index, on: true, brightness: first.ch.kind === "Light" ? 100 : null, rampSeconds: null };
+        const first = outputs.find((o) => isDimmable(o.ch.kind)) ?? outputs[0];
+        if (first && (d.action.type !== "output" || !isDimmable(d.action.kind)))
+          next.action = {
+            type: "output", deviceId: first.d.deviceId, kind: first.ch.kind, index: first.ch.index, on: true,
+            brightness: isDimmable(first.ch.kind) ? 100 : null, rampSeconds: null,
+            // An on-air sign on a colour strip starts out red.
+            rgb: isColor(first.ch.kind) ? [255, 0, 0] : null, white: first.ch.kind === "Rgbw" ? 0 : null,
+          };
         next.endAction = { type: "off" };
         next.endDelaySeconds = 3;
         next.debounceSeconds = 0;
@@ -635,7 +642,14 @@ function ActionPicker({
               onChange({ type: "scene", sceneId: action.type === "scene" ? action.sceneId : scenes[0]?.id ?? "", mode: v === "scene" ? "apply" : "off" });
             else {
               const base = action.type === "output" ? action : firstOut ? { type: "output" as const, deviceId: firstOut.d.deviceId, kind: firstOut.ch.kind, index: firstOut.ch.index } : null;
-              if (base) onChange({ ...base, type: "output", on: v === "on", brightness: v === "on" && base.kind === "Light" ? (action.type === "output" ? action.brightness : null) ?? 100 : null, rampSeconds: action.type === "output" ? action.rampSeconds ?? null : null });
+              if (base)
+                onChange({
+                  ...base, type: "output", on: v === "on",
+                  brightness: v === "on" && isDimmable(base.kind) ? (action.type === "output" ? action.brightness : null) ?? 100 : null,
+                  rampSeconds: action.type === "output" ? action.rampSeconds ?? null : null,
+                  rgb: v === "on" && isColor(base.kind) ? (action.type === "output" ? action.rgb : null) ?? [255, 255, 255] : null,
+                  white: v === "on" && base.kind === "Rgbw" ? (action.type === "output" ? action.white : null) ?? 0 : null,
+                });
             }
           }}
         >
@@ -667,7 +681,13 @@ function ActionPicker({
               value={outKey}
               onChange={(e) => {
                 const o = outputs.find((x) => x.key === e.currentTarget.value);
-                if (o) onChange({ ...action, deviceId: o.d.deviceId, kind: o.ch.kind, index: o.ch.index, brightness: o.ch.kind === "Light" && action.on ? action.brightness ?? 100 : null });
+                if (o)
+                  onChange({
+                    ...action, deviceId: o.d.deviceId, kind: o.ch.kind, index: o.ch.index,
+                    brightness: isDimmable(o.ch.kind) && action.on ? action.brightness ?? 100 : null,
+                    rgb: isColor(o.ch.kind) && action.on ? action.rgb ?? [255, 255, 255] : null,
+                    white: o.ch.kind === "Rgbw" && action.on ? action.white ?? 0 : null,
+                  });
               }}
             >
               {outputs.map((o) => (
@@ -677,13 +697,24 @@ function ActionPicker({
               ))}
             </select>
           </div>
-          {out?.ch.kind === "Light" && action.on && (
+          {out && isColor(out.ch.kind) && action.on && (
+            <div className={c("field")} style={{ gridColumn: "1 / -1" }}>
+              <span className={c("field-label")}>Colour</span>
+              <ColorPicker
+                label={channelLabel(out.ch)}
+                withWhite={out.ch.kind === "Rgbw"}
+                value={{ rgb: (action.rgb ?? [255, 255, 255]) as Rgb, white: action.white }}
+                onChange={(v) => onChange({ ...action, rgb: v.rgb, white: v.white ?? null })}
+              />
+            </div>
+          )}
+          {out && isDimmable(out.ch.kind) && action.on && (
             <>
               <NumField label="Level (%)" value={action.brightness ?? 100} min={1} max={100} onChange={(v) => onChange({ ...action, brightness: v })} />
               <NumField label="Ramp (seconds)" value={action.rampSeconds ?? null} min={0} max={600} step={0.5} onChange={(v) => onChange({ ...action, rampSeconds: v })} hint="Fade up to the level." />
             </>
           )}
-          {out?.ch.kind === "Light" && !action.on && (
+          {out && isDimmable(out.ch.kind) && !action.on && (
             <NumField label="Ramp down (seconds)" value={action.rampSeconds ?? null} min={0} max={600} step={0.5} onChange={(v) => onChange({ ...action, rampSeconds: v })} hint="Fade out before turning off." />
           )}
         </>

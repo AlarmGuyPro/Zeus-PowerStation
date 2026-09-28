@@ -133,6 +133,10 @@ public sealed class ReadingsService
         _ => null,
     };
 
+    /// <summary>Devices powered from a low-voltage DC supply.</summary>
+    public static bool IsDcDevice(string? app) =>
+        app is not null && app.Contains("RGBW", StringComparison.OrdinalIgnoreCase);
+
     internal CurrentLimits? LimitsFor(DeviceRecord record, ChannelState ch)
     {
         if (!ch.Metered) return null;
@@ -167,7 +171,9 @@ public sealed class ReadingsService
                 if (!ch.Metered) continue;
                 var label = ch.Name ?? $"{(ch.Kind == ChannelKind.Meter ? "Meter" : "Output")} {ch.Index + 1}";
 
-                if (ch.VoltageV is { } v and > 1)
+                // Colour LED controllers (and the RGBW PM in light mode) report their DC supply, not mains.
+                var dc = ch.Kind.IsColor() || IsDcDevice(record.App);
+                if (ch.VoltageV is { } v and > 1 && !dc)
                 {
                     _latestVolts[$"{record.DeviceId}|{ch.Key}"] = (v / f, now);
                     if (v < mains.LimitLowV * f) See($"{record.DeviceId}|{ch.Key}|voltageLow", "voltageLow", "limit", v, mains.LimitLowV * f);
@@ -178,7 +184,7 @@ public sealed class ReadingsService
 
                 var limits = LimitsFor(record, ch);
                 // Plugs without a voltage reading: estimate current from power at the nominal voltage.
-                var amps = ch.CurrentA ?? (ch.PowerW is { } p ? Math.Round(p / (mains.NominalV * f), 2) : null);
+                var amps = ch.CurrentA ?? (ch.PowerW is { } p && !dc ? Math.Round(p / (mains.NominalV * f), 2) : null);
                 if (limits is not null && amps is { } a)
                 {
                     if (limits.MaxA is { } max && a > max) See($"{record.DeviceId}|{ch.Key}|currentHigh", "currentHigh", "limit", a, max);

@@ -23,6 +23,10 @@ public interface IShellyClient
     /// unless this is called again first.
     /// </summary>
     Task SetSafetyTimerAsync(ChannelKind kind, int index, int seconds, CancellationToken ct);
+
+    /// <summary>Colour lights: any of on/off, level, colour and white, with an optional fade.</summary>
+    Task SetColorAsync(ChannelKind kind, int index, bool? on, double? brightness, int[]? rgb, double? white,
+        double? transitionSeconds, CancellationToken ct);
 }
 
 public enum DimDirection { Up, Down, Stop }
@@ -185,7 +189,7 @@ public sealed class Gen2Client : IShellyClient
         CallTaggedAsync("Switch.Set", new JsonObject { ["id"] = index, ["on"] = on }, ct);
 
     public Task ToggleAsync(ChannelKind kind, int index, CancellationToken ct) =>
-        CallTaggedAsync(kind == ChannelKind.Light ? "Light.Toggle" : "Switch.Toggle",
+        CallTaggedAsync($"{kind.RpcName()}.Toggle",
             new JsonObject { ["id"] = index }, ct);
 
     public Task SetLightAsync(int index, bool? on, double? brightness, double? transitionSeconds, CancellationToken ct)
@@ -200,8 +204,23 @@ public sealed class Gen2Client : IShellyClient
     }
 
     public Task SetSafetyTimerAsync(ChannelKind kind, int index, int seconds, CancellationToken ct) =>
-        CallTaggedAsync(kind == ChannelKind.Light ? "Light.Set" : "Switch.Set",
+        CallTaggedAsync($"{kind.RpcName()}.Set",
             new JsonObject { ["id"] = index, ["on"] = true, ["toggle_after"] = Math.Max(1, seconds) }, ct);
+
+    public Task SetColorAsync(ChannelKind kind, int index, bool? on, double? brightness, int[]? rgb, double? white,
+        double? transitionSeconds, CancellationToken ct)
+    {
+        if (!kind.IsColor()) throw new ArgumentException("Not a colour light.", nameof(kind));
+        var p = new JsonObject { ["id"] = index };
+        if (on is not null) p["on"] = on.Value;
+        if (brightness is not null) p["brightness"] = Math.Clamp(Math.Round(brightness.Value), 1, 100);
+        if (rgb is { Length: 3 }) p["rgb"] = new JsonArray(rgb.Select(v => (JsonNode)Math.Clamp(v, 0, 255)).ToArray());
+        if (white is not null && kind == ChannelKind.Rgbw) p["white"] = Math.Clamp(Math.Round(white.Value), 0, 255);
+        if (transitionSeconds is > 0) p["transition_duration"] = transitionSeconds.Value;
+        // The device needs on or brightness in every Set; a colour change alone turns it on.
+        if (on is null && brightness is null) p["on"] = true;
+        return CallTaggedAsync($"{kind.RpcName()}.Set", p, ct);
+    }
 
     public Task DimAsync(int index, DimDirection direction, CancellationToken ct) =>
         CallAsync(direction switch
@@ -358,6 +377,8 @@ public sealed class Gen2Client : IShellyClient
             ChannelKind kind;
             if (prefix == "switch") kind = ChannelKind.Switch;
             else if (prefix == "light") kind = ChannelKind.Light;
+            else if (prefix == "rgb") kind = ChannelKind.Rgb;
+            else if (prefix == "rgbw") kind = ChannelKind.Rgbw;
             else continue;
             if (!int.TryParse(key[(colon + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out var index)) continue;
 
@@ -368,7 +389,11 @@ public sealed class Gen2Client : IShellyClient
                 Index = index,
                 Name = names.TryGetValue(key, out var n) ? n : null,
                 On = GetBool(c, "output") ?? false,
-                Brightness = kind == ChannelKind.Light ? GetDouble(c, "brightness") : null,
+                Brightness = kind.IsDimmable() ? GetDouble(c, "brightness") : null,
+                Rgb = kind.IsColor() && c["rgb"] is JsonArray rgb && rgb.Count == 3
+                    ? rgb.Select(v => v is JsonValue jv && jv.TryGetValue<double>(out var d) ? (int)Math.Round(d) : 0).ToArray()
+                    : null,
+                White = kind == ChannelKind.Rgbw ? GetDouble(c, "white") : null,
                 PowerW = GetDouble(c, "apower"),
                 VoltageV = GetDouble(c, "voltage"),
                 CurrentA = GetDouble(c, "current"),
@@ -398,7 +423,8 @@ public sealed class Gen2Client : IShellyClient
         if (config is null) return names;
         foreach (var (key, node) in config)
         {
-            if (!(key.StartsWith("switch:", StringComparison.Ordinal) || key.StartsWith("light:", StringComparison.Ordinal))) continue;
+            if (!(key.StartsWith("switch:", StringComparison.Ordinal) || key.StartsWith("light:", StringComparison.Ordinal) ||
+                  key.StartsWith("rgb:", StringComparison.Ordinal) || key.StartsWith("rgbw:", StringComparison.Ordinal))) continue;
             if (node is JsonObject c && GetString(c, "name") is { Length: > 0 } name) names[key] = name;
         }
         return names;
