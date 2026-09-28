@@ -229,7 +229,9 @@ ${e("group-label")} { display: flex; align-items: center; gap: 6px; font-size: 1
 ${e("group-label")}::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 ${e("group-label--box")} { color: var(--accent-bright); }
 ${e("group-label--box")}::after { display: none; }
-${e("scene-box")} { border: 1px solid var(--line-strong); border-left: 3px solid var(--accent); border-radius: var(--r-md); background: var(--bg-inset); padding: 8px 10px 2px; margin: 0 0 14px; }
+/* Scenes and Devices share one box style so the two kinds of control read as matching sections. */
+${e("group-box")} { border: 1px solid var(--line-strong); border-left: 3px solid var(--accent); border-radius: var(--r-md); background: var(--bg-inset); padding: 8px 10px 10px; margin: 0 0 14px; }
+${e("scene-box")} { padding-bottom: 2px; }
 ${e("scene-box")} ${e("scenes")} { margin-bottom: 8px; }
 ${e("scene-box")} ${e("scene")} { background: var(--bg-2); border-radius: 999px / 14px; padding: 6px 10px; }
 

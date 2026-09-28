@@ -6,7 +6,7 @@ import { ApiError, type PowerStationClient, type TrafficEntry } from "./api";
 import { Notice, type StatusState } from "./shared";
 import { c } from "./styles";
 
-const KEEP = 1000;
+const KEEP = 500;
 const message = (err: unknown) => (err instanceof ApiError ? err.message : String(err));
 
 function time(iso: string) {
@@ -41,6 +41,7 @@ function asText(entries: TrafficEntry[]) {
 export function DebugLog({ client, status }: { client: PowerStationClient; status: StatusState }) {
   const devices = status.data?.devices ?? [];
   const [entries, setEntries] = useState<TrafficEntry[]>([]);
+  const [enabled, setEnabled] = useState(true);
   const [recordAll, setRecordAll] = useState(false);
   const [until, setUntil] = useState<string | null>(null);
   const [device, setDevice] = useState<string>("*");
@@ -60,6 +61,7 @@ export function DebugLog({ client, status }: { client: PowerStationClient; statu
       try {
         const r = await client.debugLog(since.current);
         if (!alive) return;
+        setEnabled(r.enabled);
         setRecordAll(r.recordAll);
         setUntil(r.recordAllUntil ?? null);
         if (r.latest < since.current) {
@@ -98,6 +100,20 @@ export function DebugLog({ client, status }: { client: PowerStationClient; statu
   }, [entries, device, errorsOnly, hideRoutine, text]);
 
   const errorCount = entries.filter((e) => !e.ok).length;
+
+  async function toggleEnabled(on: boolean) {
+    try {
+      const r = await client.setDebug({ enabled: on });
+      setEnabled(r.enabled);
+      setRecordAll(r.recordAll);
+      if (!on) {
+        setEntries([]);
+        since.current = 0;
+      }
+    } catch (err) {
+      setError(message(err));
+    }
+  }
 
   async function toggleRecordAll(on: boolean) {
     try {
@@ -156,9 +172,18 @@ export function DebugLog({ client, status }: { client: PowerStationClient; statu
       </h3>
       <p className={c("hint")} style={{ margin: "0 0 8px" }}>
         Every command and every error between PowerStation and your devices, newest first. Turn on "Record every poll" to
-        also see the routine status reads (it switches itself off after 30 minutes). Passwords are never logged.
+        also see the routine status reads (it switches itself off after 30 minutes). Passwords are never logged. The log is
+        kept in memory only: at most 500 entries, 24 hours, and nothing is written to disk.
       </p>
 
+      <label className={c("check")} style={{ marginBottom: 6 }}>
+        <input type="checkbox" checked={enabled} onChange={(e) => toggleEnabled(e.currentTarget.checked)} />
+        <span>Debug log on</span>
+      </label>
+      {!enabled ? (
+        <p className={c("hint")}>The debug log is off. Nothing is being recorded.</p>
+      ) : (
+      <>
       <label className={c("check")} style={{ marginBottom: 8 }}>
         <input type="checkbox" checked={recordAll} onChange={(e) => toggleRecordAll(e.currentTarget.checked)} />
         <span>
@@ -260,6 +285,8 @@ export function DebugLog({ client, status }: { client: PowerStationClient; statu
             );
           })}
         </ul>
+      )}
+      </>
       )}
     </section>
   );

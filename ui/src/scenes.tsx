@@ -57,7 +57,7 @@ export function ScenesStrip({ client, status }: { client: PowerStationClient; st
   }
 
   return (
-    <section className={c("scene-box")} aria-labelledby="ps-scene-box">
+    <section className={c("group-box", "scene-box")} aria-labelledby="ps-scene-box">
       <h3 className={c("group-label", "group-label--box")} id="ps-scene-box">
         <SceneIcon /> Scenes
       </h3>

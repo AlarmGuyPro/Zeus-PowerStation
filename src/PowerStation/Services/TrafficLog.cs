@@ -28,15 +28,22 @@ public sealed record TrafficQuery(long? Since, string? DeviceId, bool ErrorsOnly
 
 /// <summary>
 /// A ring buffer of the traffic between PowerStation and the Shelly devices,
-/// for the Debug section in setup. Errors and commands are always kept;
-/// routine status polls only while "record everything" is on, so the buffer
-/// isn't flooded. Secrets never get here: auth headers aren't logged and
-/// request bodies carry no passwords.
+/// for the Debug section in setup. Memory only, never written to disk, and
+/// bounded three ways: at most 500 entries, 2,000 characters per request or
+/// reply, and 24 hours of age. Errors and commands are kept; routine status
+/// polls only while "record every poll" is on (it turns itself off after 30
+/// minutes). The whole log can be switched off, which also clears it.
+/// Secrets never get here: auth headers aren't logged and request bodies
+/// carry no passwords.
 /// </summary>
 public sealed class TrafficLog
 {
-    public const int Capacity = 1000;
-    public const int MaxBodyChars = 4000;
+    /// <summary>Most entries kept; the oldest drop off first.</summary>
+    public const int Capacity = 500;
+    /// <summary>Longest request or reply kept per entry.</summary>
+    public const int MaxBodyChars = 2000;
+    /// <summary>Entries older than this are dropped.</summary>
+    public static readonly TimeSpan MaxAge = TimeSpan.FromHours(24);
 
     private static readonly HashSet<string> RoutineMethods = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -49,6 +56,12 @@ public sealed class TrafficLog
     private long _seq;
 
     public TrafficLog(TimeProvider? time = null) => _time = time ?? TimeProvider.System;
+
+    /// <summary>
+    /// The log is on unless the operator turns it off. Off records nothing.
+    /// It lives in memory only and is never written to disk.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
 
     /// <summary>Keep every poll, not just errors and commands.</summary>
     public bool RecordAll { get; set; }
@@ -68,6 +81,7 @@ public sealed class TrafficLog
     public void Add(string kind, string? deviceId, string? host, string method, string? request, int? status,
         string? response, string? error, double? ms)
     {
+        if (!Enabled) return;
         if (RecordAll && RecordAllUntil is { } until && _time.GetUtcNow() > until) SetRecordAll(false);
         var routine = IsRoutine(method);
         if (routine && error is null && !RecordAll) return;
@@ -89,6 +103,24 @@ public sealed class TrafficLog
                 Routine = routine,
             });
             while (_entries.Count > Capacity) _entries.RemoveFirst();
+            Prune();
+        }
+    }
+
+    /// <summary>Drops entries past <see cref="MaxAge"/>. Call with the lock held.</summary>
+    private void Prune()
+    {
+        var oldest = _time.GetUtcNow() - MaxAge;
+        while (_entries.First is { } first && first.Value.At < oldest) _entries.RemoveFirst();
+    }
+
+    public void SetEnabled(bool on)
+    {
+        Enabled = on;
+        if (!on)
+        {
+            SetRecordAll(false);
+            Clear();
         }
     }
 
@@ -107,7 +139,11 @@ public sealed class TrafficLog
         if (!string.IsNullOrWhiteSpace(q.Text))
             text = new Regex(Regex.Escape(q.Text.Trim()), RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         TrafficEntry[] all;
-        lock (_lock) all = _entries.ToArray();
+        lock (_lock)
+        {
+            Prune();
+            all = _entries.ToArray();
+        }
         var matches = all
             .Where(e => q.Since is null || e.Seq > q.Since)
             .Where(e => q.DeviceId is null || e.DeviceId == q.DeviceId || (q.DeviceId == "" && e.DeviceId is null))
@@ -118,6 +154,7 @@ public sealed class TrafficLog
             .ToArray();
         return new
         {
+            enabled = Enabled,
             recordAll = RecordAll,
             recordAllUntil = RecordAllUntil,
             latest = all.Length == 0 ? 0 : all[^1].Seq,

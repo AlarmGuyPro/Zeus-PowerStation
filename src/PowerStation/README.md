@@ -3,7 +3,7 @@
 Control and monitor the Shelly relays, plugs, dimmers and energy meters in
 your shack from inside Zeus, and let Zeus switch them for you. By KQ4WLR.
 
-## What it does (version 0.6.2)
+## What it does (version 0.6.3)
 
 - **Turn outputs on and off** on Shelly Gen1, Gen2, Gen3, Gen4 and "Powered
   by Shelly" devices: Shelly 1 / 1PM / 2.5 (relay mode), Plug and Plug S,
@@ -134,6 +134,11 @@ or hide the routine status polls. **Record every poll** also keeps the
 successful status reads, so you can see exactly what a device reports; it
 turns itself off after 30 minutes. **Copy** or **Download** the filtered list
 to share it. Passwords and login headers are never recorded.
+
+The log is kept in memory only, never written to disk, and stays small: the
+newest 500 entries, each request or reply cut to 2,000 characters, nothing
+older than 24 hours. It's cleared when Zeus closes. Turn **Debug log on** off
+to stop recording and clear it; PowerStation remembers the choice.
 
 If PowerStation can't make sense of a device's status, the device's card now
 says so (instead of staying on "Connecting…"), and the reply is in the log.

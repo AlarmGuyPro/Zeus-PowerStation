@@ -232,6 +232,7 @@ function applyPower(ch: ChannelState) {
 
 // ---- pretend debug log
 const dbg = {
+  enabled: true,
   recordAll: false,
   entries: (() => {
     const at = (s: number) => new Date(Date.now() - s * 1000).toISOString();
@@ -584,10 +585,14 @@ const api: ZeusPluginApi = {
 
     if (path.startsWith("/debug/log") && method === "GET") {
       const since = Number(new URLSearchParams(path.split("?")[1] ?? "").get("since") ?? 0);
-      return json({ recordAll: dbg.recordAll, recordAllUntil: dbg.recordAll ? new Date(Date.now() + 30 * 60000).toISOString() : null,
+      return json({ enabled: dbg.enabled, recordAll: dbg.recordAll, recordAllUntil: dbg.recordAll ? new Date(Date.now() + 30 * 60000).toISOString() : null,
         latest: dbg.entries.at(-1)?.seq ?? 0, total: dbg.entries.length, entries: dbg.entries.filter((e) => e.seq > since) });
     }
-    if (path === "/debug" && method === "PUT") { dbg.recordAll = !!body?.recordAll; return json({ recordAll: dbg.recordAll }); }
+    if (path === "/debug" && method === "PUT") {
+      if (typeof body?.enabled === "boolean") { dbg.enabled = body.enabled; if (!dbg.enabled) { dbg.entries = []; dbg.recordAll = false; } }
+      if (typeof body?.recordAll === "boolean") dbg.recordAll = body.recordAll;
+      return json({ enabled: dbg.enabled, recordAll: dbg.recordAll });
+    }
     if (path === "/debug/log" && method === "DELETE") { dbg.entries = []; return json({ cleared: true }); }
     if (path === "/automation" && method === "PUT") { if (typeof body?.paused === "boolean") { eng.paused = body.paused; log(body.paused ? "Automations paused" : "Automations running"); } return json(automationView()); }
     if (path === "/automation/activity") { log("I'm here"); return json(automationView()); }

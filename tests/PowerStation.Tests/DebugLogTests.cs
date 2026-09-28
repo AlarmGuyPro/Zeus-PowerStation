@@ -54,6 +54,42 @@ public static class DebugLogTests
     }
 
     [Test]
+    public static void LogIsBoundedByCountSizeAndAge()
+    {
+        var time = new ManualTime(new DateTimeOffset(2026, 9, 28, 12, 0, 0, TimeSpan.Zero));
+        var log = new KQ4WLR.PowerStation.Services.TrafficLog(time);
+        for (var i = 0; i < 800; i++) log.Add("rpc", "d", "h", "Switch.Set", "{}", 200, new string('x', 10_000), null, 1);
+        var view = JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(log.Query(new(null, null, false, false, null, 1000), _ => null)))!;
+        Assert.Equal(500, view["total"]!.GetValue<int>(), "at most 500 entries");
+        Assert.True(view["entries"]![0]!["Response"]!.GetValue<string>().Length < 2100, "replies trimmed to about 2,000 characters");
+
+        time.Advance(TimeSpan.FromHours(25));
+        view = JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(log.Query(new(null, null, false, false, null, 1000), _ => null)))!;
+        Assert.Equal(0, view["total"]!.GetValue<int>(), "older than a day is dropped");
+    }
+
+    [Test]
+    public static async Task TurningTheLogOffStopsAndClearsItAndIsRemembered()
+    {
+        await using var fake = await FakeShellyGen2.StartAsync("shellyplus1-deb000000002", f => f.Switches.Add(new FakeShellyGen2.FakeSwitch()));
+        var context = new FakePluginContext();
+        await using (var host = await PluginHost.StartAsync(context))
+        {
+            await host.SendAsync(HttpMethod.Post, "devices", new { host = fake.Host });
+            Assert.True((await Log(host)).Count > 0, "on by default");
+            var (_, off) = await host.SendAsync(HttpMethod.Put, "debug", new { enabled = false });
+            Assert.False(off!["enabled"]!.GetValue<bool>(), "off");
+            await host.SendAsync(HttpMethod.Post, $"devices/{fake.DeviceId}/channels/switch/0", new { action = "on" });
+            Assert.Equal(0, (await Log(host)).Count, "nothing recorded while off, and cleared");
+        }
+        await using (var again = await PluginHost.StartAsync(context))
+        {
+            var (_, body) = await again.SendAsync(HttpMethod.Get, "debug/log");
+            Assert.False(body!["enabled"]!.GetValue<bool>(), "stays off after a restart");
+        }
+    }
+
+    [Test]
     public static async Task Gen1TrafficIsRecordedWithoutTheBasicAuthHeader()
     {
         await using var one = await FakeShellyGen1.StartAsync("SHSW-1", f => { f.Password = "gen1-pw"; f.Relays.Add(new FakeShellyGen1.Relay()); });

@@ -1,0 +1,92 @@
+<title>PowerStation Panel Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --bg-0: #e9ecf1; --bg-1: #f7f8fa; --bg-2: #eef1f5; --bg-3: #e2e7ee; --bg-inset: #ffffff;
+    --fg-0: #0d1420; --fg-1: #243044; --fg-2: #536073; --fg-3: #7b8697;
+    --line: #d6dce5; --line-strong: #b5bfcc; --panel-border: #cbd3de; --panel-top: #f1f4f8; --panel-bot: #e6eaf0;
+    --accent: #1f6feb; --accent-bright: #0b5bd3; --ok: #1a7f37; --amber: #9a6700; --tx: #cf222e;
+    --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+    --r-xs: 3px; --r-sm: 5px; --r-md: 8px; --r-lg: 12px;
+    --dur-fast: 120ms; --dur-med: 200ms; --ease-out: cubic-bezier(.2,.8,.2,1);
+    --page: #dfe4eb; --page-fg: #1b2433; --page-muted: #5b6678; --frame-bar: #cfd6e0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg-0: #0b0e13; --bg-1: #12161d; --bg-2: #181d25; --bg-3: #212833; --bg-inset: #0e1218;
+      --fg-0: #f1f4f8; --fg-1: #d3d9e2; --fg-2: #9fa9b7; --fg-3: #737d8c;
+      --line: #252c37; --line-strong: #394352; --panel-border: #2a323e; --panel-top: #1a2029; --panel-bot: #141920;
+      --accent: #3d8bfd; --accent-bright: #72abff; --ok: #3fb96b; --amber: #e0a526; --tx: #ef4b4b;
+      --page: #07090d; --page-fg: #e3e8ef; --page-muted: #8a95a5; --frame-bar: #1b212b;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg-0: #0b0e13; --bg-1: #12161d; --bg-2: #181d25; --bg-3: #212833; --bg-inset: #0e1218;
+    --fg-0: #f1f4f8; --fg-1: #d3d9e2; --fg-2: #9fa9b7; --fg-3: #737d8c;
+    --line: #252c37; --line-strong: #394352; --panel-border: #2a323e; --panel-top: #1a2029; --panel-bot: #141920;
+    --accent: #3d8bfd; --accent-bright: #72abff; --ok: #3fb96b; --amber: #e0a526; --tx: #ef4b4b;
+    --page: #07090d; --page-fg: #e3e8ef; --page-muted: #8a95a5; --frame-bar: #1b212b;
+  }
+  body { background: var(--page); color: var(--page-fg); font-family: var(--font-sans); }
+  .mk-wrap { max-width: 1280px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 32px; display: grid; gap: 16px; }
+  .mk-intro h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; text-wrap: balance; }
+  .mk-intro p { margin: 0; color: var(--page-muted); max-width: 70ch; line-height: 1.5; }
+  .mk-tag { display: inline-block; font-family: var(--font-mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--page-muted); border: 1px solid var(--line-strong); border-radius: var(--r-xs); padding: 1px 6px; margin-bottom: 8px; }
+  .mk-controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+  .mk-seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--r-sm); overflow: hidden; background: var(--bg-1); }
+  .mk-seg-btn { font: 500 13px var(--font-sans); color: var(--fg-1); background: transparent; border: 0; padding: 7px 12px; cursor: pointer; min-height: 34px; }
+  .mk-seg-btn + .mk-seg-btn { border-left: 1px solid var(--line-strong); }
+  .mk-seg-btn[aria-selected="true"] { background: var(--bg-3); color: var(--fg-0); box-shadow: inset 0 -2px 0 var(--accent); }
+  .mk-select { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--page-muted); }
+  .mk-select select { font: 13px var(--font-sans); color: var(--fg-0); background: var(--bg-1); border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 6px 8px; min-height: 34px; max-width: 100%; }
+  .mk-reset { font: 13px var(--font-sans); color: var(--fg-1); background: var(--bg-1); border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 6px 12px; min-height: 34px; cursor: pointer; }
+  .mk-wrap :focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+  .mk-stage { display: grid; gap: 16px; }
+  @media (min-width: 980px) { .mk-stage--both { grid-template-columns: 1.35fr 1fr; } }
+  .mk-frame { border: 1px solid var(--panel-border); border-radius: var(--r-md); overflow: hidden; background: var(--bg-1); display: flex; flex-direction: column; min-width: 0; height: 900px; max-width: 1240px; }
+  .mk-frame-bar { display: flex; align-items: center; gap: 8px; font: 500 12px var(--font-sans); color: var(--fg-2); background: var(--frame-bar); padding: 7px 10px; border-bottom: 1px solid var(--panel-border); }
+  .mk-dot { width: 8px; height: 8px; border-radius: 2px; background: var(--accent); }
+  .mk-frame-body { flex: 1; min-height: 0; }
+  .mk-notes { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); font-size: 13px; color: var(--page-muted); line-height: 1.5; }
+  .mk-notes div { border-top: 1px solid var(--line-strong); padding-top: 8px; }
+  .mk-notes strong { color: var(--page-fg); font-weight: 600; display: block; margin-bottom: 2px; }
+  .mk-frame--small { height: auto; max-width: 520px; }
+  .mk-frame--small .mk-frame-body { padding: 0; }
+  .mk-zeus { border: 1px dashed var(--line-strong); border-radius: var(--r-md); padding: 10px 12px; display: grid; gap: 8px; background: var(--bg-1); }
+  .mk-zeus-title { font: 600 13px var(--font-sans); color: var(--page-fg); }
+  .mk-zeus-title span { font-weight: 400; color: var(--page-muted); }
+  .mk-zeus-row { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+  .mk-zeus-freq { font: 500 13px var(--font-mono); color: var(--fg-0); min-width: 15em; }
+  .mk-zeus button, .mk-small { font: 12px var(--font-sans); color: var(--fg-1); background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 4px 10px; min-height: 30px; cursor: pointer; }
+  .mk-zeus input.mk-small { width: 7em; cursor: text; }
+  .mk-zeus-tune { display: inline-flex; gap: 4px; }
+  .mk-bands button { font-family: var(--font-mono); min-width: 44px; padding: 4px 6px; }
+  .mk-zeus button[aria-pressed="true"] { background: var(--bg-3); color: var(--fg-0); box-shadow: inset 0 -2px 0 var(--accent); }
+  .mk-zeus-label { font: 500 12px var(--font-mono); color: var(--fg-1); min-width: 9em; }
+  .mk-tx { font-weight: 600 !important; }
+  .mk-tx--on { background: var(--tx) !important; color: #fff !important; border-color: var(--tx) !important; box-shadow: none !important; }
+</style>
+<div class="mk-wrap">
+  <div class="mk-intro">
+    <span class="mk-tag">Mockup · example devices</span>
+    <h1>PowerStation 0.6 in Zeus</h1>
+    <p>The PowerStation 0.6.0 panel running against a pretend backend, so every button works. Use <strong>Pretend Zeus</strong> to tune, change band, key TX, start or close Zeus and skip ahead in time, then watch the rules act on the device cards. The devices, addresses and readings are examples. Colors here stand in for your Zeus theme.</p>
+  </div>
+  <div id="mk-root"></div>
+  <div class="mk-notes">
+    <div><strong>Colour lights (new)</strong>Shack accent strip is a Plus RGBW PM in RGBW mode; On Air sign is one in RGB mode. Pick a swatch or any colour, set the level, and on RGBW the white LEDs too. Scenes and rules store colours: Evening lights sets the strip to amber, and Key TX turns the On Air sign red.</div>
+    <div><strong>Gear instead of tabs</strong>Setup lives behind the cog at the top right, with sections for Devices, Scenes, Automations and Layout. Columns and Arrange moved to Layout. There's one panel, called PowerStation, plus the optional small idle-timer panel.</div>
+    <div><strong>Scenes and dimmers</strong>Scenes sit in their own labelled box above the devices. The dimmer level is smaller, lighter and centred between − (orange) and + (green).</div>
+    <div><strong>Automations</strong>Setup › Automations lists the rules. Try: Key TX (On Air sign), the 6m band button (preamp), Tune 1.85 (Beverage), Zeus starts / closes, Skip to 1 min before idle, then Pretend it's 23:00.</div>
+    <div><strong>Safety timers</strong>Amplifier (10 min) and Station PSU (30 min) show a timer. The Shelly turns them off by itself if Zeus stops renewing it after a crash or power cut. You set it per output (Setup › Devices › Edit) or per scene.</div>
+    <div><strong>Readings</strong>Setup › Readings sets the normal mains range (120 V: 114–126 normal, 110–127 limit) and per-output current limits (80% of the device rating warns, 100% is the limit; set your own lower). Use the Mains and fault buttons in Pretend Zeus: after 5 seconds the card turns amber or red, the header counts it, and the event is logged.</div>
+    <div><strong>Gen1</strong>The Shack mains ShellyEM shows its contactor relay and both clamp meters. Tower lights is a Shelly 1 Gen1. Gen1 passwords are stored as entered, and setup says so.</div>
+  </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>

@@ -70,17 +70,30 @@ export function StatusView({
         </div>
       )}
       {layoutError && <Notice tone="warn">{layoutError}</Notice>}
-      <h3 className={c("group-label")}>Devices</h3>
-      <DeviceGrid
-        devices={data.devices}
-        layout={layout}
-        arranging={arranging}
-        onSave={save}
-        renderCard={(d, controls) => (
-          <DeviceCard device={d} client={client} onUpdate={status.applyDevice} controls={controls} arranging={arranging} />
-        )}
-      />
+      <section className={c("group-box", "group-box--devices")} aria-labelledby="ps-device-box">
+        <h3 className={c("group-label", "group-label--box")} id="ps-device-box">
+          <DevicesIcon /> Devices
+        </h3>
+        <DeviceGrid
+          devices={data.devices}
+          layout={layout}
+          arranging={arranging}
+          onSave={save}
+          renderCard={(d, controls) => (
+            <DeviceCard device={d} client={client} onUpdate={status.applyDevice} controls={controls} arranging={arranging} />
+          )}
+        />
+      </section>
     </>
+  );
+}
+
+function DevicesIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
+      <path d="M8 1.5v5.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M4.6 3.8a5.2 5.2 0 1 0 6.8 0" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
   );
 }
 

@@ -291,6 +291,7 @@ export interface TrafficEntry {
 }
 
 export interface TrafficView {
+  enabled: boolean;
   recordAll: boolean;
   recordAllUntil?: string | null;
   latest: number;
@@ -377,9 +378,9 @@ export function createClient(api: ZeusPluginApi) {
     extendIdle: () => call<AutomationState>("POST", "/automation/extend"),
     saveReadings: (patch: { mains?: MainsProfile; holdSeconds?: number }) => call<ReadingsView>("PUT", "/readings", patch),
     clearReadingEvents: () => call<ReadingsView>("DELETE", "/readings/events"),
-    debugLog: (since: number) => call<TrafficView>("GET", `/debug/log?since=${since}&max=1000`),
-    setDebug: (patch: { recordAll?: boolean }) =>
-      call<{ recordAll: boolean; recordAllUntil?: string | null }>("PUT", "/debug", patch),
+    debugLog: (since: number) => call<TrafficView>("GET", `/debug/log?since=${since}&max=500`),
+    setDebug: (patch: { recordAll?: boolean; enabled?: boolean }) =>
+      call<{ enabled: boolean; recordAll: boolean; recordAllUntil?: string | null }>("PUT", "/debug", patch),
     clearDebugLog: () => call<{ cleared: boolean }>("DELETE", "/debug/log"),
     status: () => call<StatusResponse>("GET", "/status"),
     probe: (host: string) => call<ProbeResponse>("POST", "/devices/probe", { host }),

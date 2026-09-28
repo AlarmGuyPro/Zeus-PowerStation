@@ -1,0 +1,17 @@
+{
+  "name": "powerstation-screenshots",
+  "private": true,
+  "type": "module",
+  "description": "Renders docs/screenshots and the promo image from the mockup (not part of the plugin).",
+  "scripts": {
+    "docs": "node docs.mjs",
+    "promo": "node promo.mjs"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.1.0",
+    "@fontsource/ibm-plex-sans": "^5.1.0",
+    "puppeteer": "^24.0.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}

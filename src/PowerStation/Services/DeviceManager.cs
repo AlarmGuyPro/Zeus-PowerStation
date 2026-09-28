@@ -90,6 +90,8 @@ public sealed class DeviceManager : IAsyncDisposable
     /// <summary>Traffic with the devices, for the Debug section.</summary>
     public TrafficLog Traffic { get; }
 
+    internal Task SaveDebugEnabledAsync(bool enabled, CancellationToken ct) => _store.SaveDebugEnabledAsync(enabled, ct);
+
     /// <summary>Saved scenes; available after <see cref="LoadAsync"/>.</summary>
     public SceneManager Scenes { get; private set; } = null!;
 
@@ -175,6 +177,7 @@ public sealed class DeviceManager : IAsyncDisposable
     public async Task LoadAsync(CancellationToken ct)
     {
         _options = await _store.LoadOptionsAsync(ct).ConfigureAwait(false);
+        Traffic.Enabled = await _store.LoadDebugEnabledAsync(ct).ConfigureAwait(false);
         foreach (var record in await _store.LoadDevicesAsync(ct).ConfigureAwait(false))
             _entries[record.DeviceId] = new Entry(record, CreateClient(record));
         _layout = await _store.LoadLayoutAsync(ct).ConfigureAwait(false);

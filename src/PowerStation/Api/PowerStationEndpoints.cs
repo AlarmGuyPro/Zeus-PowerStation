@@ -35,8 +35,13 @@ internal static class PowerStationEndpoints
         endpoints.MapPut("debug", (Handler)((HttpContext http) => Run(http, manager, async (m, ct) =>
         {
             var body = await ReadAsync<DebugRequest>(http, ct).ConfigureAwait(false);
-            if (body.RecordAll is { } all) m.Traffic.SetRecordAll(all);
-            return new { recordAll = m.Traffic.RecordAll, recordAllUntil = m.Traffic.RecordAllUntil };
+            if (body.Enabled is { } enabled)
+            {
+                m.Traffic.SetEnabled(enabled);
+                await m.SaveDebugEnabledAsync(enabled, ct).ConfigureAwait(false);
+            }
+            if (body.RecordAll is { } all && m.Traffic.Enabled) m.Traffic.SetRecordAll(all);
+            return new { enabled = m.Traffic.Enabled, recordAll = m.Traffic.RecordAll, recordAllUntil = m.Traffic.RecordAllUntil };
         })));
 
         endpoints.MapDelete("debug/log", (Handler)((HttpContext http) => Run(http, manager, (m, _) =>
@@ -212,7 +217,7 @@ internal static class PowerStationEndpoints
     private delegate Task<IResult> Handler(HttpContext http);
 
     private sealed record ProbeRequest(string? Host);
-    private sealed record DebugRequest(bool? RecordAll);
+    private sealed record DebugRequest(bool? RecordAll, bool? Enabled);
 
     private static DiscoveryService Discovery(Func<DiscoveryService?> get) =>
         get() ?? throw new PowerStationRequestException(503, "PowerStation is still starting.");

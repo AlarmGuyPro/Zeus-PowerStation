@@ -31,6 +31,9 @@ public interface IDeviceStore
     Task SaveDiscoverySettingsAsync(DiscoverySettings settings, CancellationToken ct);
     Task<Layout?> LoadLayoutAsync(CancellationToken ct);
     Task SaveLayoutAsync(Layout layout, CancellationToken ct);
+    /// <summary>Whether the Debug traffic log is on. Defaults to on.</summary>
+    Task<bool> LoadDebugEnabledAsync(CancellationToken ct) => Task.FromResult(true);
+    Task SaveDebugEnabledAsync(bool enabled, CancellationToken ct) => Task.CompletedTask;
 }
 
 /// <summary>Status-tab grid: column count (0 = automatic) and device IDs per column, top to bottom.</summary>
@@ -51,6 +54,7 @@ public sealed class SettingsDeviceStore : IDeviceStore
     internal const string OptionsKey = "options.v1";
     internal const string ScenesKey = "scenes.v1";
     internal const string LayoutKey = "layout.v1";
+    internal const string DebugKey = "debug.v1";
 
     private readonly IPluginSettings _settings;
 
@@ -95,6 +99,17 @@ public sealed class SettingsDeviceStore : IDeviceStore
 
     public Task SaveLayoutAsync(Layout layout, CancellationToken ct) =>
         _settings.SetAsync(LayoutKey, JsonSerializer.Serialize(layout, Json.Options), ct);
+
+    public async Task<bool> LoadDebugEnabledAsync(CancellationToken ct)
+    {
+        var json = await _settings.GetAsync<string>(DebugKey, ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(json)) return true;
+        try { return JsonDocument.Parse(json).RootElement.GetProperty("enabled").GetBoolean(); }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { return true; }
+    }
+
+    public Task SaveDebugEnabledAsync(bool enabled, CancellationToken ct) =>
+        _settings.SetAsync(DebugKey, JsonSerializer.Serialize(new { enabled }, Json.Options), ct);
 
     public async Task<PowerStationOptions> LoadOptionsAsync(CancellationToken ct)
     {

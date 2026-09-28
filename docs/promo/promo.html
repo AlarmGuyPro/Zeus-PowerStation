@@ -1,0 +1,55 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="/fonts.css">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { width: 1600px; height: 900px; overflow: hidden; font-family: "IBM Plex Sans", sans-serif; color: #e6ebf2;
+    background: radial-gradient(1200px 700px at 78% 30%, #1a2433 0%, #0d1118 60%, #090c11 100%); position: relative; }
+  .left { position: absolute; left: 64px; top: 64px; width: 560px; }
+  .tag { display: inline-block; font: 500 13px "IBM Plex Mono", monospace; letter-spacing: .08em; text-transform: uppercase;
+    color: #9fb4d0; border: 1px solid #33425a; border-radius: 4px; padding: 3px 8px; }
+  h1 { font-size: 64px; font-weight: 700; letter-spacing: -0.02em; margin-top: 18px; line-height: 1; }
+  h1 span { color: #5aa2ff; }
+  .sub { font-size: 23px; color: #b7c3d3; margin-top: 14px; line-height: 1.35; }
+  ul { list-style: none; padding: 0; margin-top: 30px; display: grid; gap: 13px; }
+  li { display: grid; grid-template-columns: 30px 1fr; gap: 12px; font-size: 18.5px; line-height: 1.35; color: #d3dbe6; }
+  li b { color: #ffffff; font-weight: 600; }
+  .dot { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; font-size: 15px; font-weight: 700; }
+  .d1 { background: #16361f; color: #4fd07a; } .d2 { background: #172a45; color: #72abff; } .d3 { background: #3a2a10; color: #f0b43c; }
+  .d4 { background: #3a1616; color: #ff6b6b; } .d5 { background: #26203d; color: #b18cff; } .d6 { background: #123236; color: #4fd6d6; }
+  .foot { position: absolute; left: 64px; bottom: 44px; width: 580px; font: 500 15px "IBM Plex Mono", monospace; color: #7f8ea3; line-height: 1.6; }
+  .foot b { color: #c9d4e3; font-weight: 500; }
+  .shot { position: absolute; border-radius: 14px; overflow: hidden; border: 1px solid #2f3a4b;
+    box-shadow: 0 30px 80px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.03); background: #12161d; }
+  .shot img { display: block; width: 100%; }
+  .bar { height: 30px; background: #1b212b; border-bottom: 1px solid #2a323e; display: flex; align-items: center; gap: 7px; padding: 0 12px;
+    font-size: 13px; color: #9fa9b7; }
+  .bar i { width: 9px; height: 9px; border-radius: 2px; background: #3d8bfd; display: inline-block; }
+  .main { left: 680px; top: 48px; width: 860px; height: 610px; }
+  .main .crop { height: 580px; overflow: hidden; }
+  .rules { left: 700px; top: 560px; width: 560px; }
+  .rules .crop { height: 270px; overflow: hidden; }
+  .rules img { width: 880px !important; max-width: none; }
+  .colour { left: 1250px; top: 470px; width: 300px; }
+  .label { position: absolute; font: 600 12px "IBM Plex Sans"; letter-spacing: .1em; text-transform: uppercase; color: #9fb4d0;
+    background: #0d1118cc; border: 1px solid #33425a; border-radius: 999px; padding: 4px 10px; }
+</style></head><body>
+  <div class="left">
+    <span class="tag">Zeus SDR community plugin</span>
+    <h1>Power<span>Station</span></h1>
+    <p class="sub">Your Shelly relays, dimmers, colour lights and energy meters, controlled and automated right inside Zeus.</p>
+    <ul>
+      <li><span class="dot d1">⏻</span><span><b>One panel</b> for plugs, relays, Pro 4PM, dimmers, RGBW strips and ShellyEM meters, Gen1 to Gen4</span></li>
+      <li><span class="dot d2">▦</span><span><b>Scenes</b>: set a whole station, levels and colours in one click, with All off</span></li>
+      <li><span class="dot d3">⚙</span><span><b>Rules</b> on Zeus start and close, band, frequency, idle time and time of day</span></li>
+      <li><span class="dot d4">●</span><span><b>On-air light</b> follows TX, and everything else waits until you're back on RX</span></li>
+      <li><span class="dot d5">⏱</span><span><b>Safety timers</b>: outputs switch themselves off if Zeus stops</span></li>
+      <li><span class="dot d6">⚡</span><span><b>Live watts, volts and amps</b> with normal ranges and an event log</span></li>
+    </ul>
+  </div>
+  <div class="foot">by <b>KQ4WLR</b> · free and open source (GPL-2.0)<br><b>github.com/AlarmGuyPro/Zeus-PowerStation</b></div>
+
+  <div class="shot main"><div class="bar"><i></i>PowerStation</div><div class="crop"><img src="status.png"></div></div>
+  <div class="shot rules"><div class="bar"><i></i>Setup › Automations</div><div class="crop"><img src="rules.png"></div></div>
+  <div class="shot colour"><img src="colour.png"></div>
+</body></html>

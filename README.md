@@ -7,6 +7,17 @@ dimmers and energy meters on the shack LAN, with rules driven by Zeus.
 Operator documentation lives in [`src/PowerStation/README.md`](src/PowerStation/README.md)
 and ships inside the package.
 
+![PowerStation overview](docs/promo/powerstation-promo.png)
+
+## Documentation
+
+- [Handoff](docs/HANDOFF.md): start here if you're picking up the project
+- [Decisions](docs/DECISIONS.md): what was decided and why
+- [Changelog](CHANGELOG.md)
+- [HTTP API](docs/API.md)
+- [Hardware test checklist](docs/HARDWARE-TESTING.md)
+- [Catalog submission](docs/CATALOG-SUBMISSION.md)
+
 ## Status
 
 | Phase | Scope | State |
@@ -23,6 +34,7 @@ and ships inside the package.
 | 3+ | Colour lights: Plus RGBW PM in RGB/RGBW mode with colour, level and white on the panel, in scenes and in rules | **Done** (0.6.0) |
 | 3+ | Setup › Debug: filterable device traffic log (commands, errors, optional polls) with copy/download; unreadable status shown on the card | **Done** (0.6.1) |
 | 3+ | Plus RGBW PM connects: device replies with a repeated setting name are read (last value wins); output names can't block polling (found with the debug log) | **Done** (0.6.2) |
+| 3+ | Devices shown in a labelled box like Scenes; debug log on/off switch (remembered) with tighter limits (memory only, 500 entries, 24 h); handoff docs, changelog, promo image | **Done** (0.6.3) |
 | 4 | Rules on readings (low battery, AC out of range), polish, in-Zeus screenshots, catalog submission | Planned |
 
 ## Layout
@@ -35,10 +47,23 @@ src/PowerStation/            The feature: C# backend, plugin.json, operator READ
   Services/                  Devices, scenes, rules, readings, discovery and re-find, persistence, polling
   Api/                       HTTP endpoints under /api/plugins/io.github.alarmguypro.powerstation/
 ui/                          React panels (TypeScript), bundled to src/PowerStation/ui/powerstation.js
-  preview/                   Local preview with a mocked backend (not packaged)
+  preview/                   Clickable mockup with a pretend backend (not packaged); `npm run mockup`
 tests/PowerStation.Tests/    Test runner plus in-process Shelly Gen1 and Gen2 simulators
-docs/screenshots/            UI states captured from the mockup harness
+tools/screenshots/           Renders docs/screenshots and the promo image from the mockup
+docs/                        Handoff, decisions, API, hardware tests, catalog steps
+  screenshots/               UI states captured from the mockup
+  promo/                     Overview image for posts and chats (plus crops)
 ```
+
+## Preview without Zeus
+
+```sh
+cd ui && npm ci && npm run mockup
+# open ui/preview/dist/powerstation-mockup.html
+```
+
+The mockup runs the real panels against a pretend backend, with a
+"Pretend Zeus" bar to drive TX, band, idle and mains faults.
 
 ## Build
 
