@@ -75,16 +75,17 @@
   <div class="mk-intro">
     <span class="mk-tag">Mockup · example devices</span>
     <h1>PowerStation 0.6 in Zeus</h1>
-    <p>The PowerStation 0.6.0 panel running against a pretend backend, so every button works. Use <strong>Pretend Zeus</strong> to tune, change band, key TX, start or close Zeus and skip ahead in time, then watch the rules act on the device cards. The devices, addresses and readings are examples. Colors here stand in for your Zeus theme.</p>
+    <p>The PowerStation 0.6.3 panel running against a pretend backend, so every button works. Use <strong>Pretend Zeus</strong> to tune, change band, key TX, start or close Zeus and skip ahead in time, then watch the rules act on the device cards. The devices, addresses and readings are examples. Colors here stand in for your Zeus theme.</p>
   </div>
   <div id="mk-root"></div>
   <div class="mk-notes">
-    <div><strong>Colour lights (new)</strong>Shack accent strip is a Plus RGBW PM in RGBW mode; On Air sign is one in RGB mode. Pick a swatch or any colour, set the level, and on RGBW the white LEDs too. Scenes and rules store colours: Evening lights sets the strip to amber, and Key TX turns the On Air sign red.</div>
+    <div><strong>Colour lights</strong>Shack accent strip is a Plus RGBW PM in RGBW mode; On Air sign is one in RGB mode. Pick a swatch or any colour, set the level, and on RGBW the white LEDs too. Scenes and rules store colours: Evening lights sets the strip to amber, and Key TX turns the On Air sign red.</div>
     <div><strong>Gear instead of tabs</strong>Setup lives behind the cog at the top right, with sections for Devices, Scenes, Automations and Layout. Columns and Arrange moved to Layout. There's one panel, called PowerStation, plus the optional small idle-timer panel.</div>
-    <div><strong>Scenes and dimmers</strong>Scenes sit in their own labelled box above the devices. The dimmer level is smaller, lighter and centred between − (orange) and + (green).</div>
+    <div><strong>Scenes, devices and dimmers</strong>Scenes and Devices each sit in the same labelled box. The dimmer level is smaller, lighter and centred between − (orange) and + (green).</div>
     <div><strong>Automations</strong>Setup › Automations lists the rules. Try: Key TX (On Air sign), the 6m band button (preamp), Tune 1.85 (Beverage), Zeus starts / closes, Skip to 1 min before idle, then Pretend it's 23:00.</div>
     <div><strong>Safety timers</strong>Amplifier (10 min) and Station PSU (30 min) show a timer. The Shelly turns them off by itself if Zeus stops renewing it after a crash or power cut. You set it per output (Setup › Devices › Edit) or per scene.</div>
     <div><strong>Readings</strong>Setup › Readings sets the normal mains range (120 V: 114–126 normal, 110–127 limit) and per-output current limits (80% of the device rating warns, 100% is the limit; set your own lower). Use the Mains and fault buttons in Pretend Zeus: after 5 seconds the card turns amber or red, the header counts it, and the event is logged.</div>
+    <div><strong>Debug log</strong>Setup › Debug shows device traffic with filters. It lives in memory only (500 entries, 24 hours) and has an on/off switch that PowerStation remembers.</div>
     <div><strong>Gen1</strong>The Shack mains ShellyEM shows its contactor relay and both clamp meters. Tower lights is a Shelly 1 Gen1. Gen1 passwords are stored as entered, and setup says so.</div>
   </div>
 </div>
