@@ -77,6 +77,11 @@ public sealed class DeviceManager : IAsyncDisposable
 
     public PowerStationOptions Options => _options;
 
+    /// <summary>Saved scenes; available after <see cref="LoadAsync"/>.</summary>
+    public SceneManager Scenes { get; private set; } = null!;
+
+    public bool Contains(string deviceId) => _entries.ContainsKey(deviceId);
+
     private sealed class Entry(DeviceRecord record, IShellyClient client)
     {
         public DeviceRecord Record { get; set; } = record;
@@ -101,7 +106,10 @@ public sealed class DeviceManager : IAsyncDisposable
             }
             _entries[record.DeviceId] = new Entry(record, CreateClient(record));
         }
-        _logger.LogInformation("PowerStation loaded {Count} device(s)", _entries.Count);
+        Scenes = new SceneManager(_store, this);
+        await Scenes.LoadAsync(ct).ConfigureAwait(false);
+        _logger.LogInformation("PowerStation loaded {Count} device(s) and {Scenes} scene(s)",
+            _entries.Count, Scenes.List().Count);
     }
 
     public void StartPolling()
@@ -364,6 +372,59 @@ public sealed class DeviceManager : IAsyncDisposable
         {
             _mutate.Release();
         }
+        await Scenes.ForgetDeviceAsync(deviceId, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Applies many channel settings at once (scenes). Devices are driven in
+    /// parallel; outputs on the same device go one after another. Each device
+    /// touched is polled once afterwards so the returned views are current.
+    /// A failure on one output never stops the others.
+    /// </summary>
+    internal async Task<(IReadOnlyList<TargetResult> Results, IReadOnlyList<DeviceView> Devices)> ApplyTargetsAsync(
+        IReadOnlyList<SceneTarget> targets, double? fadeSeconds, CancellationToken ct)
+    {
+        var results = new System.Collections.Concurrent.ConcurrentBag<TargetResult>();
+        var touched = new List<Entry>();
+        var perDevice = targets.GroupBy(t => t.DeviceId);
+        await Task.WhenAll(perDevice.Select(async group =>
+        {
+            if (!_entries.TryGetValue(group.Key, out var entry))
+            {
+                foreach (var t in group) results.Add(new TargetResult(t.DeviceId, t.ChannelKey, false, "Device was removed from PowerStation."));
+                return;
+            }
+            lock (touched) touched.Add(entry);
+            var name = entry.Record.Name ?? entry.Record.DeviceId;
+            foreach (var t in group)
+            {
+                try
+                {
+                    if (t.Kind == ChannelKind.Light)
+                        await entry.Client.SetLightAsync(t.Index, t.On, t.On ? t.Brightness : null, fadeSeconds, ct).ConfigureAwait(false);
+                    else
+                        await entry.Client.SetSwitchAsync(t.Index, t.On, ct).ConfigureAwait(false);
+                    results.Add(new TargetResult(t.DeviceId, t.ChannelKey, true, null));
+                }
+                catch (ShellyException ex)
+                {
+                    results.Add(new TargetResult(t.DeviceId, t.ChannelKey, false, $"{name}: {ex.Message}"));
+                    if (ex.Kind is ShellyErrorKind.Unreachable or ShellyErrorKind.Unauthorized)
+                    {
+                        // The rest of this device will fail the same way; don't wait on each.
+                        foreach (var rest in group.SkipWhile(x => x != t).Skip(1))
+                            results.Add(new TargetResult(rest.DeviceId, rest.ChannelKey, false, $"{name}: {ex.Message}"));
+                        break;
+                    }
+                }
+            }
+        })).ConfigureAwait(false);
+
+        await Task.WhenAll(touched.Select(e => PollEntryAsync(e, ct))).ConfigureAwait(false);
+        var order = targets.Select((t, i) => (Key: $"{t.DeviceId}/{t.ChannelKey}", i)).ToDictionary(x => x.Key, x => x.i);
+        return (
+            results.OrderBy(r => order.GetValueOrDefault($"{r.DeviceId}/{r.ChannelKey}")).ToArray(),
+            touched.Select(ToView).ToArray());
     }
 
     public async Task<DeviceView> RefreshAsync(string deviceId, CancellationToken ct)

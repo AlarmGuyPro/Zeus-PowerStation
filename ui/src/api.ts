@@ -50,10 +50,35 @@ export interface DeviceView {
   };
 }
 
+export interface SceneTarget {
+  deviceId: string;
+  kind: ChannelKind;
+  index: number;
+  on: boolean;
+  brightness?: number | null;
+}
+
+export interface Scene {
+  id: string;
+  name: string;
+  fadeSeconds?: number | null;
+  targets: SceneTarget[];
+}
+
+export interface SceneRunResult {
+  sceneId: string;
+  mode: "apply" | "off";
+  succeeded: number;
+  failed: number;
+  results: { deviceId: string; channelKey: string; ok: boolean; error?: string | null }[];
+  devices: DeviceView[];
+}
+
 export interface StatusResponse {
   version: string;
   pollIntervalMs: number;
   devices: DeviceView[];
+  scenes: Scene[];
 }
 
 export interface ProbeResponse {
@@ -114,7 +139,14 @@ export function createClient(api: ZeusPluginApi) {
 
   const id = (deviceId: string) => encodeURIComponent(deviceId);
 
+  const sceneBody = (s: Omit<Scene, "id">) => ({ name: s.name, fadeSeconds: s.fadeSeconds ?? null, targets: s.targets });
+
   return {
+    createScene: (s: Omit<Scene, "id">) => call<Scene>("POST", "/scenes", sceneBody(s)),
+    updateScene: (id: string, s: Omit<Scene, "id">) => call<Scene>("PUT", `/scenes/${encodeURIComponent(id)}`, sceneBody(s)),
+    deleteScene: (id: string) => call<{ removed: string }>("DELETE", `/scenes/${encodeURIComponent(id)}`),
+    runScene: (id: string, mode: "apply" | "off") =>
+      call<SceneRunResult>("POST", `/scenes/${encodeURIComponent(id)}/run`, { mode }),
     status: () => call<StatusResponse>("GET", "/status"),
     probe: (host: string) => call<ProbeResponse>("POST", "/devices/probe", { host }),
     addDevice: (host: string, name?: string, password?: string) =>

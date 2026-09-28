@@ -3,7 +3,7 @@
 Control and monitor the Shelly relays, plugs and dimmers in your shack from
 inside Zeus. By KQ4WLR.
 
-## What it does (version 0.1)
+## What it does (version 0.2)
 
 - **Turn outputs on and off** on Shelly Gen2, Gen3, Gen4 and "Powered by
   Shelly" devices (Plus / Pro relays, Pro 3, Pro 4PM, Plug US, Dimmer Gen3,
@@ -12,6 +12,10 @@ inside Zeus. By KQ4WLR.
 - **Live readings** for metering devices: watts, volts, amps, energy (kWh)
   and device temperature, plus a running total for the whole station.
 - **Warnings** the device raises, such as overpower or overheating.
+- **Scenes**: a named set of outputs and dimmer levels applied in one click,
+  with an optional fade for dimmers. Every scene also has **All off**, so a
+  scene doubles as an on/off group. If one device is offline, the rest of
+  the scene still runs and PowerStation tells you what was missed.
 
 Gen1 devices, automatic discovery, and automations (Zeus start/stop, TX,
 band, idle time) are coming in the next versions.
@@ -24,6 +28,10 @@ band, idle time) are coming in the next versions.
    address and choose **Add device**. If the device has a password, you'll be
    asked for it.
 3. Add the **PowerStation** panel to your workspace to control everything.
+4. To make a scene, open **PowerStation Devices**, scroll to **Scenes** and
+   choose **New scene**. Tick the outputs, pick On or Off and a level for each
+   dimmer, or press **Use current states** to capture the station as it is.
+   Scene buttons then appear at the top of the **PowerStation** panel.
 
 Devices on another VLAN work as long as the Zeus computer can reach them on
 port 80. If a device shows **Offline**, check the address and any firewall

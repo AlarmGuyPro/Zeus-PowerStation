@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ApiError, type DeviceView, type PowerStationClient, type StatusResponse } from "./api";
+import { ApiError, type DeviceView, type PowerStationClient, type Scene, type StatusResponse } from "./api";
 import { CSS, ROOT, c } from "./styles";
 
 /** Scoped root wrapper. The <style> element lives and dies with the panel. */
@@ -21,6 +21,8 @@ export interface StatusState {
   /** Merge a single device returned by a command so the UI updates immediately. */
   applyDevice: (device: DeviceView) => void;
   removeDevice: (deviceId: string) => void;
+  upsertScene: (scene: Scene) => void;
+  dropScene: (sceneId: string) => void;
 }
 
 /**
@@ -80,7 +82,19 @@ export function useStatus(client: PowerStationClient, intervalMs = 2000): Status
     setData((prev) => (prev ? { ...prev, devices: prev.devices.filter((d) => d.deviceId !== deviceId) } : prev));
   }, []);
 
-  return { data, error, loading, reload: () => void load(), applyDevice, removeDevice };
+  const upsertScene = useCallback((scene: Scene) => {
+    setData((prev) => {
+      if (!prev) return prev;
+      const exists = prev.scenes.some((s) => s.id === scene.id);
+      return { ...prev, scenes: exists ? prev.scenes.map((s) => (s.id === scene.id ? scene : s)) : [...prev.scenes, scene] };
+    });
+  }, []);
+
+  const dropScene = useCallback((sceneId: string) => {
+    setData((prev) => (prev ? { ...prev, scenes: prev.scenes.filter((s) => s.id !== sceneId) } : prev));
+  }, []);
+
+  return { data, error, loading, reload: () => void load(), applyDevice, removeDevice, upsertScene, dropScene };
 }
 
 export function HealthLabel({ device }: { device: DeviceView }) {

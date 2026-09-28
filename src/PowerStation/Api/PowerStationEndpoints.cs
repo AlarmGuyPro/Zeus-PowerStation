@@ -23,7 +23,32 @@ internal static class PowerStationEndpoints
                 version,
                 pollIntervalMs = m.Options.PollIntervalMs,
                 devices = m.List(),
+                scenes = m.Scenes.List(),
             }))));
+
+        endpoints.MapPost("scenes", (Handler)((HttpContext http) => Run(http, manager, async (m, ct) =>
+        {
+            var body = await ReadAsync<SceneRequest>(http, ct).ConfigureAwait(false);
+            return await m.Scenes.CreateAsync(body, ct).ConfigureAwait(false);
+        })));
+
+        endpoints.MapPut("scenes/{id}", (HttpContext http, string id) => Run(http, manager, async (m, ct) =>
+        {
+            var body = await ReadAsync<SceneRequest>(http, ct).ConfigureAwait(false);
+            return await m.Scenes.UpdateAsync(id, body, ct).ConfigureAwait(false);
+        }));
+
+        endpoints.MapDelete("scenes/{id}", (HttpContext http, string id) => Run(http, manager, async (m, ct) =>
+        {
+            await m.Scenes.DeleteAsync(id, ct).ConfigureAwait(false);
+            return new { removed = id };
+        }));
+
+        endpoints.MapPost("scenes/{id}/run", (HttpContext http, string id) => Run(http, manager, async (m, ct) =>
+        {
+            var body = await ReadOptionalAsync<SceneRunRequest>(http, ct).ConfigureAwait(false);
+            return await m.Scenes.RunAsync(id, body, ct).ConfigureAwait(false);
+        }));
 
         endpoints.MapPost("devices/probe", (Handler)((HttpContext http) => Run(http, manager, async (m, ct) =>
         {
@@ -114,11 +139,21 @@ internal static class PowerStationEndpoints
     private static IResult Error(int status, string kind, string message) =>
         Results.Json(new { error = message, kind }, Json.Options, statusCode: status);
 
-    private static async Task<T> ReadAsync<T>(HttpContext http, CancellationToken ct)
+    /// <summary>
+    /// Reads a body that may be absent. Doesn't trust Content-Length, which
+    /// is missing for chunked requests.
+    /// </summary>
+    private static async Task<T?> ReadOptionalAsync<T>(HttpContext http, CancellationToken ct) where T : class
     {
-        if (http.Request.ContentLength is > 16 * 1024)
-            throw new PowerStationRequestException(413, "Request too large.");
-        var value = await JsonSerializer.DeserializeAsync<T>(http.Request.Body, Json.Options, ct).ConfigureAwait(false);
-        return value ?? throw new PowerStationRequestException(400, "The request body was empty.");
+        using var reader = new StreamReader(http.Request.Body);
+        var buffer = new char[16 * 1024 + 1];
+        var read = await reader.ReadBlockAsync(buffer.AsMemory(), ct).ConfigureAwait(false);
+        if (read > 16 * 1024) throw new PowerStationRequestException(413, "Request too large.");
+        var text = new string(buffer, 0, read);
+        return string.IsNullOrWhiteSpace(text) ? null : JsonSerializer.Deserialize<T>(text, Json.Options);
     }
+
+    private static async Task<T> ReadAsync<T>(HttpContext http, CancellationToken ct) where T : class =>
+        await ReadOptionalAsync<T>(http, ct).ConfigureAwait(false)
+        ?? throw new PowerStationRequestException(400, "The request body was empty.");
 }

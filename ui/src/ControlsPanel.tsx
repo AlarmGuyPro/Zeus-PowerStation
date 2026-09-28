@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError, type ChannelState, type DeviceView, type PowerStationClient } from "./api";
 import { BackendError, HealthLabel, Loading, Notice, PanelRoot, channelLabel, fmt, useStatus } from "./shared";
+import { ScenesStrip } from "./scenes";
 import { c } from "./styles";
 
 const ERROR_TEXT: Record<string, string> = {
@@ -31,6 +32,7 @@ export function ControlsPanel({ client }: { client: PowerStationClient }) {
     body = (
       <>
         {error && <Notice tone="warn">Lost contact with PowerStation. Showing the last known state.</Notice>}
+        <ScenesStrip client={client} status={status} />
         {data.devices.map((d) => (
           <DeviceCard key={d.deviceId} device={d} client={client} onUpdate={status.applyDevice} />
         ))}

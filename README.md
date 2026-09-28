@@ -11,7 +11,8 @@ and ships inside the package.
 
 | Phase | Scope | State |
 |---|---|---|
-| 1 | Gen2+ client with digest auth, manual add, on/off, dimming, live metering, Controls and Devices panels | **Done** |
+| 1 | Gen2+ client with digest auth, manual add, on/off, dimming, live metering, Controls and Devices panels | **Done** (0.1.0) |
+| 1.5 | Scenes and groups (outputs + dimmer levels + fade, All off), lighter typography | **Done** (0.2.0) |
 | 2 | Gen1 client, mDNS discovery, subnet sweep and direct query for VLANs, automatic re-find | Next |
 | 3 | Automations: Zeus start/stop, MOX, band, mode, frequency, idle with warning pill, restore-on-return, TX deferral, device-side dead-man timers | Planned |
 | 4 | Polish, in-Zeus screenshots, catalog submission | Planned |
@@ -22,7 +23,7 @@ and ships inside the package.
 sdk/                         Zeus plugin contracts, vendored unchanged (GPL-2.0-or-later)
 src/PowerStation/            The feature: C# backend, plugin.json, operator README, build-package.ps1
   Shelly/                    Gen2 RPC client, SHA-256 digest auth, address validation
-  Services/                  Device list, persistence, background polling
+  Services/                  Device list, scenes, persistence, background polling
   Api/                       HTTP endpoints under /api/plugins/io.github.alarmguypro.powerstation/
 ui/                          React panels (TypeScript), bundled to src/PowerStation/ui/powerstation.js
   preview/                   Local preview with a mocked backend (not packaged)

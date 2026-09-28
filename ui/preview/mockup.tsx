@@ -3,7 +3,7 @@
 // against an in-memory pretend backend with example devices.
 import { useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { createClient, type ChannelState, type DeviceView, type ZeusPluginApi } from "../src/api";
+import { createClient, type ChannelState, type DeviceView, type Scene, type SceneTarget, type ZeusPluginApi } from "../src/api";
 import { ControlsPanel } from "../src/ControlsPanel";
 import { DevicesPanel } from "../src/DevicesPanel";
 
@@ -56,7 +56,18 @@ function exampleDevices(): DeviceView[] {
   ];
 }
 
-const state = { scenario: "normal" as Scenario, devices: exampleDevices() };
+const RACK = "shellypro4pm-f008d1d8b8b8", ANT = "shellypro3-c8f09e1a2b3c", LAMP = "shellydimmerg3-84fce63a1b2c", LIN = "ogemray25a-a1b2c3d4e5f6";
+const t = (deviceId: string, kind: "Switch" | "Light", index: number, on: boolean, brightness: number | null = null): SceneTarget =>
+  ({ deviceId, kind, index, on, brightness });
+function exampleScenes(): Scene[] {
+  return [
+    { id: "s-operating", name: "Operating", fadeSeconds: 2, targets: [
+      t(RACK, "Switch", 0, true), t(RACK, "Switch", 1, true), t(RACK, "Switch", 2, true), t(ANT, "Switch", 0, true), t(LAMP, "Light", 0, true, 70), t(LIN, "Switch", 0, true) ] },
+    { id: "s-evening", name: "Evening lights", fadeSeconds: 3, targets: [t(LAMP, "Light", 0, true, 25), t(RACK, "Switch", 2, false)] },
+    { id: "s-listen", name: "Listen only", fadeSeconds: null, targets: [t(RACK, "Switch", 0, false), t(RACK, "Switch", 1, true), t(ANT, "Switch", 0, true), t(ANT, "Switch", 2, true)] },
+  ];
+}
+const state = { scenario: "normal" as Scenario, devices: exampleDevices(), scenes: exampleScenes() };
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 const fail = (error: string, status = 400) => json({ error, kind: "request" }, status);
@@ -76,7 +87,40 @@ const api: ZeusPluginApi = {
     await new Promise((r) => setTimeout(r, 180));
     if (state.scenario === "down") throw new TypeError("Failed to fetch");
     const devices = state.devices;
-    if (method === "GET" && path === "/status") return json({ version: "0.1.0", pollIntervalMs: 2000, devices: clone(devices) });
+    if (method === "GET" && path === "/status") return json({ version: "0.2.0", pollIntervalMs: 2000, devices: clone(devices), scenes: clone(state.scenes) });
+
+    const sm = path.match(/^\/scenes(?:\/([^/]+))?(\/run)?$/);
+    if (sm) {
+      const scene = sm[1] ? state.scenes.find((x) => x.id === decodeURIComponent(sm[1])) : undefined;
+      if (sm[1] && !scene) return fail("That scene doesn't exist.", 404);
+      if (method === "DELETE") { state.scenes = state.scenes.filter((x) => x !== scene); return json({ removed: scene!.id }); }
+      if (!sm[2]) {
+        const name = String(body?.name ?? "").trim();
+        if (!name) return fail("Give the scene a name.");
+        if (!body?.targets?.length) return fail("Pick at least one output for the scene.");
+        if (state.scenes.some((x) => x.id !== scene?.id && x.name.toLowerCase() === name.toLowerCase()))
+          return fail(`There's already a scene called "${name}".`, 409);
+        const saved: Scene = { id: scene?.id ?? `s-${Date.now()}`, name, fadeSeconds: body.fadeSeconds || null, targets: body.targets };
+        state.scenes = scene ? state.scenes.map((x) => (x === scene ? saved : x)) : [...state.scenes, saved];
+        return json(saved);
+      }
+      const mode = body?.mode === "off" ? "off" : "apply";
+      const results = scene!.targets.map((tg) => {
+        const d = devices.find((x) => x.deviceId === tg.deviceId);
+        if (!d) return { deviceId: tg.deviceId, channelKey: "", ok: false, error: "Device was removed from PowerStation." };
+        const key = `${tg.kind === "Light" ? "light" : "switch"}:${tg.index}`;
+        if (d.status.health !== "Online") return { deviceId: d.deviceId, channelKey: key, ok: false, error: `${d.displayName}: ${d.host} didn't answer in time.` };
+        const ch = d.status.channels.find((c) => c.key === key);
+        if (ch) {
+          ch.on = mode === "off" ? false : tg.on;
+          if (ch.kind === "Light") { if (mode === "apply" && tg.on && tg.brightness) ch.brightness = tg.brightness; ch.powerW = ch.on ? +((ch.brightness ?? 0) * 0.114).toFixed(1) : 0; }
+          applyPower(ch);
+        }
+        return { deviceId: d.deviceId, channelKey: key, ok: true, error: null };
+      });
+      const touched = [...new Set(scene!.targets.map((x) => x.deviceId))].map((id) => devices.find((x) => x.deviceId === id)).filter(Boolean);
+      return json({ sceneId: scene!.id, mode, succeeded: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length, results, devices: clone(touched) });
+    }
 
     if (path === "/devices/probe") {
       const host = String(body?.host ?? "").trim();
@@ -100,7 +144,11 @@ const api: ZeusPluginApi = {
     if (!d) return fail("That device isn't in PowerStation.", 404);
     const rest = dm![2] ?? "";
 
-    if (method === "DELETE") { state.devices = devices.filter((x) => x !== d); return json({ removed: d.deviceId }); }
+    if (method === "DELETE") {
+      state.devices = devices.filter((x) => x !== d);
+      state.scenes = state.scenes.map((sc) => ({ ...sc, targets: sc.targets.filter((x) => x.deviceId !== d.deviceId) }));
+      return json({ removed: d.deviceId });
+    }
     if (rest === "/refresh") return json(d);
     if (method === "PATCH") {
       if (body.name !== undefined) { d.name = body.name || null; d.displayName = body.name || d.deviceId; }
@@ -149,6 +197,7 @@ function App() {
   const pick = (s: Scenario) => {
     state.scenario = s;
     state.devices = s === "empty" ? [] : exampleDevices();
+    state.scenes = s === "empty" ? [] : exampleScenes();
     setScenario(s);
     setEpoch((e) => e + 1);
   };

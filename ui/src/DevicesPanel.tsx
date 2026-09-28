@@ -2,6 +2,7 @@
 import { useId, useState, type FormEvent } from "react";
 import { ApiError, type DeviceView, type PowerStationClient, type ProbeResponse } from "./api";
 import { BackendError, HealthLabel, Loading, Notice, PanelRoot, channelLabel, useStatus } from "./shared";
+import { ScenesSettings } from "./scenes";
 import { c } from "./styles";
 
 const message = (err: unknown) => (err instanceof ApiError ? err.message : String(err));
@@ -31,6 +32,7 @@ export function DevicesPanel({ client }: { client: PowerStationClient }) {
           onRemoved={status.removeDevice}
         />
       ))}
+      {data && data.devices.length > 0 && <ScenesSettings client={client} status={status} />}
     </PanelRoot>
   );
 }

@@ -58,7 +58,7 @@ const api: ZeusPluginApi = {
     await new Promise((r) => setTimeout(r, 150));
     if (scenario === "error") throw new TypeError("Failed to fetch");
     if (method === "GET" && path === "/status") {
-      const status: StatusResponse = { version: "0.1.0", pollIntervalMs: 2000, devices };
+      const status: StatusResponse = { version: "0.2.0", pollIntervalMs: 2000, devices, scenes: [] };
       return json(status);
     }
     const m = path.match(/^\/devices\/([^/]+)\/channels\/(switch|light)\/(\d+)$/);

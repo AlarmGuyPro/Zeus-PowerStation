@@ -19,6 +19,8 @@ public interface IDeviceStore
     Task<IReadOnlyList<DeviceRecord>> LoadDevicesAsync(CancellationToken ct);
     Task SaveDevicesAsync(IReadOnlyList<DeviceRecord> devices, CancellationToken ct);
     Task<PowerStationOptions> LoadOptionsAsync(CancellationToken ct);
+    Task<IReadOnlyList<Scene>> LoadScenesAsync(CancellationToken ct);
+    Task SaveScenesAsync(IReadOnlyList<Scene> scenes, CancellationToken ct);
 }
 
 /// <summary>
@@ -30,6 +32,7 @@ public sealed class SettingsDeviceStore : IDeviceStore
 {
     internal const string DevicesKey = "devices.v1";
     internal const string OptionsKey = "options.v1";
+    internal const string ScenesKey = "scenes.v1";
 
     private readonly IPluginSettings _settings;
 
@@ -44,6 +47,16 @@ public sealed class SettingsDeviceStore : IDeviceStore
 
     public Task SaveDevicesAsync(IReadOnlyList<DeviceRecord> devices, CancellationToken ct) =>
         _settings.SetAsync(DevicesKey, JsonSerializer.Serialize(devices, Json.Options), ct);
+
+    public async Task<IReadOnlyList<Scene>> LoadScenesAsync(CancellationToken ct)
+    {
+        var json = await _settings.GetAsync<string>(ScenesKey, ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        return JsonSerializer.Deserialize<List<Scene>>(json, Json.Options) ?? [];
+    }
+
+    public Task SaveScenesAsync(IReadOnlyList<Scene> scenes, CancellationToken ct) =>
+        _settings.SetAsync(ScenesKey, JsonSerializer.Serialize(scenes, Json.Options), ct);
 
     public async Task<PowerStationOptions> LoadOptionsAsync(CancellationToken ct)
     {
