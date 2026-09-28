@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { useEffect, useRef, useState } from "react";
 import { ApiError, type ChannelState, type DeviceView, type PowerStationClient } from "./api";
-import { BackendError, HealthLabel, Loading, Notice, PanelRoot, channelLabel, fmt, useStatus } from "./shared";
+import { BackendError, HealthLabel, Loading, Notice, channelLabel, fmt, type StatusState } from "./shared";
 import { ScenesStrip } from "./scenes";
 import { c } from "./styles";
 
@@ -14,49 +14,38 @@ const ERROR_TEXT: Record<string, string> = {
   unsupported_load: "Unsupported load",
 };
 
-export function ControlsPanel({ client }: { client: PowerStationClient }) {
-  const status = useStatus(client);
+/** Status tab: scene buttons and one card per device with its outputs. */
+export function StatusView({
+  client,
+  status,
+  onGoToSetup,
+}: {
+  client: PowerStationClient;
+  status: StatusState;
+  onGoToSetup: () => void;
+}) {
   const { data, error, loading } = status;
-
-  let body;
-  if (loading && !data) body = <Loading />;
-  else if (!data && error) body = <BackendError error={error} onRetry={status.reload} />;
-  else if (data && data.devices.length === 0)
-    body = (
+  if (loading && !data) return <Loading />;
+  if (!data && error) return <BackendError error={error} onRetry={status.reload} />;
+  if (!data) return null;
+  if (data.devices.length === 0)
+    return (
       <div className={c("empty")}>
         <strong>No devices yet</strong>
-        Add your Shelly relays, plugs and dimmers in the <em>PowerStation Devices</em> panel.
+        <p>Add your Shelly relays, plugs and dimmers on the Setup tab.</p>
+        <button type="button" className={c("button", "button--primary")} onClick={onGoToSetup}>
+          Add a device
+        </button>
       </div>
     );
-  else if (data)
-    body = (
-      <>
-        {error && <Notice tone="warn">Lost contact with PowerStation. Showing the last known state.</Notice>}
-        <ScenesStrip client={client} status={status} />
-        {data.devices.map((d) => (
-          <DeviceCard key={d.deviceId} device={d} client={client} onUpdate={status.applyDevice} />
-        ))}
-      </>
-    );
-
-  const totalW = data?.devices
-    .flatMap((d) => (d.status.health === "Online" ? d.status.channels : []))
-    .reduce((sum, ch) => sum + (ch.powerW ?? 0), 0);
-  const metered = data?.devices.some((d) => d.status.channels.some((ch) => ch.metered));
-
   return (
-    <PanelRoot label="PowerStation controls">
-      <div className={c("header")}>
-        <h2 className={c("title")}>PowerStation</h2>
-        {data && data.devices.length > 0 && (
-          <span className={c("summary")}>
-            {data.devices.length} device{data.devices.length === 1 ? "" : "s"}
-            {metered && totalW !== undefined ? ` · ${fmt.watts(totalW)} total` : ""}
-          </span>
-        )}
-      </div>
-      {body}
-    </PanelRoot>
+    <>
+      {error && <Notice tone="warn">Lost contact with PowerStation. Showing the last known state.</Notice>}
+      <ScenesStrip client={client} status={status} />
+      {data.devices.map((d) => (
+        <DeviceCard key={d.deviceId} device={d} client={client} onUpdate={status.applyDevice} />
+      ))}
+    </>
   );
 }
 
@@ -86,7 +75,7 @@ function DeviceCard({
         {!online && health !== "Pending" && (
           <Notice tone={health === "Unreachable" ? "error" : "warn"}>
             {health === "Unauthorized"
-              ? "This device needs its password. Update it in PowerStation Devices."
+              ? "This device needs its password. Enter it on the Setup tab."
               : message ?? "The device isn't answering."}
           </Notice>
         )}

@@ -3,7 +3,7 @@
 Control and monitor the Shelly relays, plugs and dimmers in your shack from
 inside Zeus. By KQ4WLR.
 
-## What it does (version 0.2)
+## What it does (version 0.2.1)
 
 - **Turn outputs on and off** on Shelly Gen2, Gen3, Gen4 and "Powered by
   Shelly" devices (Plus / Pro relays, Pro 3, Pro 4PM, Plug US, Dimmer Gen3,
@@ -24,14 +24,19 @@ band, idle time) are coming in the next versions.
 
 1. Set each device up with the **Shelly app** first and give it a fixed IP
    address (a DHCP reservation in your router is easiest).
-2. In Zeus, add the **PowerStation Devices** panel. Enter the device's IP
-   address and choose **Add device**. If the device has a password, you'll be
-   asked for it.
-3. Add the **PowerStation** panel to your workspace to control everything.
-4. To make a scene, open **PowerStation Devices**, scroll to **Scenes** and
-   choose **New scene**. Tick the outputs, pick On or Off and a level for each
-   dimmer, or press **Use current states** to capture the station as it is.
-   Scene buttons then appear at the top of the **PowerStation** panel.
+2. In Zeus, add the **PowerStation** panel (Switches category). It has two
+   tabs: **Status** for everyday control and **Setup** for devices and scenes.
+   On first run it opens on Setup.
+3. On **Setup**, enter the device's IP address and choose **Add device**. If
+   the device has a password, you'll be asked for it. Choose **Show on Status
+   tab** to go back to the controls.
+4. To make a scene, scroll to **Scenes** on the Setup tab and choose **New
+   scene**. Tick the outputs, pick On or Off and a level for each dimmer, or
+   press **Use current states** to capture the station as it is. Scene
+   buttons then appear at the top of the Status tab.
+
+**PowerStation Setup** in the panel list is the same panel opening on the
+Setup tab, if you'd like both views docked side by side.
 
 Devices on another VLAN work as long as the Zeus computer can reach them on
 port 80. If a device shows **Offline**, check the address and any firewall

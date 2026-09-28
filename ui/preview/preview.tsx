@@ -3,8 +3,7 @@
 // mocked callBackend so every UI state can be checked and screenshotted.
 import { createRoot } from "react-dom/client";
 import { createClient, type DeviceView, type StatusResponse, type ZeusPluginApi } from "../src/api";
-import { ControlsPanel } from "../src/ControlsPanel";
-import { DevicesPanel } from "../src/DevicesPanel";
+import { PowerStationPanel } from "../src/PowerStationPanel";
 
 const params = new URLSearchParams(location.search);
 const scenario = params.get("scenario") ?? "normal";
@@ -58,7 +57,7 @@ const api: ZeusPluginApi = {
     await new Promise((r) => setTimeout(r, 150));
     if (scenario === "error") throw new TypeError("Failed to fetch");
     if (method === "GET" && path === "/status") {
-      const status: StatusResponse = { version: "0.2.0", pollIntervalMs: 2000, devices, scenes: [] };
+      const status: StatusResponse = { version: "0.2.1", pollIntervalMs: 2000, devices, scenes: [] };
       return json(status);
     }
     const m = path.match(/^\/devices\/([^/]+)\/channels\/(switch|light)\/(\d+)$/);
@@ -78,5 +77,5 @@ const api: ZeusPluginApi = {
 
 const client = createClient(api);
 createRoot(document.getElementById("root")!).render(
-  panel === "devices" ? <DevicesPanel client={client} /> : <ControlsPanel client={client} />,
+  <PowerStationPanel client={client} initialTab={panel === "devices" ? "setup" : "status"} />,
 );

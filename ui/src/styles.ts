@@ -30,7 +30,11 @@ ${r} *, ${r} *::before, ${r} *::after { box-sizing: border-box; }
 ${r} :focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
 ${r} :where(button, input) { font: inherit; color: inherit; }
 
-${e("header")} { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; margin: 0 0 10px; }
+${e("header")} { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; margin: 0 0 10px; }
+${e("tabs")} { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-inset); }
+${e("tab")} { min-height: 26px; padding: 2px 12px; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--fg-2); cursor: pointer; font-size: 12px; }
+${e("tab")}:hover { color: var(--fg-0); }
+${e("tab")}[aria-selected="true"] { background: var(--bg-3); color: var(--fg-0); box-shadow: inset 0 -2px 0 var(--accent); }
 ${e("title")} { font-size: 13px; font-weight: 500; color: var(--fg-0); margin: 0; }
 ${e("summary")} { color: var(--fg-2); font-family: var(--font-mono); font-size: 11px; }
 

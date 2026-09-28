@@ -4,8 +4,7 @@
 import { useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { createClient, type ChannelState, type DeviceView, type Scene, type SceneTarget, type ZeusPluginApi } from "../src/api";
-import { ControlsPanel } from "../src/ControlsPanel";
-import { DevicesPanel } from "../src/DevicesPanel";
+import { PowerStationPanel } from "../src/PowerStationPanel";
 
 type Scenario = "normal" | "empty" | "down";
 
@@ -87,7 +86,7 @@ const api: ZeusPluginApi = {
     await new Promise((r) => setTimeout(r, 180));
     if (state.scenario === "down") throw new TypeError("Failed to fetch");
     const devices = state.devices;
-    if (method === "GET" && path === "/status") return json({ version: "0.2.0", pollIntervalMs: 2000, devices: clone(devices), scenes: clone(state.scenes) });
+    if (method === "GET" && path === "/status") return json({ version: "0.2.1", pollIntervalMs: 2000, devices: clone(devices), scenes: clone(state.scenes) });
 
     const sm = path.match(/^\/scenes(?:\/([^/]+))?(\/run)?$/);
     if (sm) {
@@ -191,7 +190,6 @@ function Frame({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function App() {
-  const [view, setView] = useState<"both" | "status" | "setup">("both");
   const [scenario, setScenario] = useState<Scenario>("normal");
   const [epoch, setEpoch] = useState(0);
   const pick = (s: Scenario) => {
@@ -204,11 +202,6 @@ function App() {
   return (
     <>
       <div className="mk-controls">
-        <div className="mk-seg" role="tablist" aria-label="Which panel">
-          {([["both", "Both panels"], ["status", "Status panel"], ["setup", "Setup panel"]] as const).map(([v, label]) => (
-            <button key={v} role="tab" aria-selected={view === v} className="mk-seg-btn" onClick={() => setView(v)}>{label}</button>
-          ))}
-        </div>
         <label className="mk-select">
           <span>Situation</span>
           <select id="mk-scenario" value={scenario} onChange={(e) => pick(e.currentTarget.value as Scenario)}>
@@ -219,9 +212,8 @@ function App() {
         </label>
         <button className="mk-reset" onClick={() => pick(scenario)}>Reset example</button>
       </div>
-      <div className={`mk-stage mk-stage--${view}`} key={epoch}>
-        {view !== "setup" && <Frame title="PowerStation"><ControlsPanel client={client} /></Frame>}
-        {view !== "status" && <Frame title="PowerStation Devices"><DevicesPanel client={client} /></Frame>}
+      <div className="mk-stage" key={epoch}>
+        <Frame title="PowerStation"><PowerStationPanel client={client} initialTab="status" /></Frame>
       </div>
     </>
   );

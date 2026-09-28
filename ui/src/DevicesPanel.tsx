@@ -1,23 +1,26 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { useId, useState, type FormEvent } from "react";
 import { ApiError, type DeviceView, type PowerStationClient, type ProbeResponse } from "./api";
-import { BackendError, HealthLabel, Loading, Notice, PanelRoot, channelLabel, useStatus } from "./shared";
+import { BackendError, HealthLabel, Loading, Notice, channelLabel, type StatusState } from "./shared";
 import { ScenesSettings } from "./scenes";
 import { c } from "./styles";
 
 const message = (err: unknown) => (err instanceof ApiError ? err.message : String(err));
 
-export function DevicesPanel({ client }: { client: PowerStationClient }) {
-  const status = useStatus(client, 5000);
+/** Setup tab: add devices, edit names, addresses and passwords, and build scenes. */
+export function SetupView({
+  client,
+  status,
+  onShowStatus,
+}: {
+  client: PowerStationClient;
+  status: StatusState;
+  onShowStatus: () => void;
+}) {
   const { data, error, loading } = status;
-
   return (
-    <PanelRoot label="PowerStation devices">
-      <div className={c("header")}>
-        <h2 className={c("title")}>PowerStation Devices</h2>
-        {data && <span className={c("summary")}>v{data.version}</span>}
-      </div>
-      <AddDeviceForm client={client} onAdded={status.applyDevice} />
+    <>
+      <AddDeviceForm client={client} onAdded={status.applyDevice} onShowStatus={onShowStatus} />
       {loading && !data && <Loading />}
       {!data && error && <BackendError error={error} onRetry={status.reload} />}
       {data && data.devices.length === 0 && (
@@ -33,11 +36,20 @@ export function DevicesPanel({ client }: { client: PowerStationClient }) {
         />
       ))}
       {data && data.devices.length > 0 && <ScenesSettings client={client} status={status} />}
-    </PanelRoot>
+      {data && <p className={c("hint")}>PowerStation v{data.version}</p>}
+    </>
   );
 }
 
-function AddDeviceForm({ client, onAdded }: { client: PowerStationClient; onAdded: (d: DeviceView) => void }) {
+function AddDeviceForm({
+  client,
+  onAdded,
+  onShowStatus,
+}: {
+  client: PowerStationClient;
+  onAdded: (d: DeviceView) => void;
+  onShowStatus: () => void;
+}) {
   const ids = useId();
   const [host, setHost] = useState("");
   const [name, setName] = useState("");
@@ -137,7 +149,14 @@ function AddDeviceForm({ client, onAdded }: { client: PowerStationClient; onAdde
         </Notice>
       )}
       {error && <Notice tone="error">{error}</Notice>}
-      {added && <Notice tone="ok">Added {added}. It now appears in the PowerStation panel.</Notice>}
+      {added && (
+        <div className={c("notice", "notice--ok", "row")} role="status">
+          <span>Added {added}.</span>
+          <button type="button" className={c("button", "button--small", "button--primary")} onClick={onShowStatus}>
+            Show on Status tab
+          </button>
+        </div>
+      )}
 
       <div className={c("row")}>
         <button type="button" className={c("button")} disabled={!host.trim() || busy !== null} onClick={check}>

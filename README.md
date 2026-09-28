@@ -13,6 +13,7 @@ and ships inside the package.
 |---|---|---|
 | 1 | Gen2+ client with digest auth, manual add, on/off, dimming, live metering, Controls and Devices panels | **Done** (0.1.0) |
 | 1.5 | Scenes and groups (outputs + dimmer levels + fade, All off), lighter typography | **Done** (0.2.0) |
+| 1.6 | One panel with Status and Setup tabs (first hardware test: Shelly 1 Gen4) | **Done** (0.2.1) |
 | 2 | Gen1 client, mDNS discovery, subnet sweep and direct query for VLANs, automatic re-find | Next |
 | 3 | Automations: Zeus start/stop, MOX, band, mode, frequency, idle with warning pill, restore-on-return, TX deferral, device-side dead-man timers | Planned |
 | 4 | Polish, in-Zeus screenshots, catalog submission | Planned |
