@@ -15,6 +15,7 @@ and ships inside the package.
 | 1.5 | Scenes and groups (outputs + dimmer levels + fade, All off), lighter typography | **Done** (0.2.0) |
 | 1.6 | One panel with Status and Setup tabs (first hardware test: Shelly 1 Gen4) | **Done** (0.2.1) |
 | 2a | Built-in mDNS, network scan for VLANs, automatic re-find after DHCP changes, output status lamps | **Done** (0.3.0) |
+| 2a+ | Column grid with drag-to-arrange (saved), wall-dimmer drawing, orange off lamp | **Done** (0.4.0) |
 | 2b | Gen1 client (Plug, 1/1PM, 2.5, Dimmer 1/2) | Next |
 | 3 | Automations: Zeus start/stop, MOX, band, mode, frequency, idle with warning pill, restore-on-return, TX deferral, device-side dead-man timers | Planned |
 | 4 | Polish, in-Zeus screenshots, catalog submission | Planned |

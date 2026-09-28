@@ -84,6 +84,41 @@ public sealed class DeviceManager : IAsyncDisposable
 
     public bool Contains(string deviceId) => _entries.ContainsKey(deviceId);
 
+    private Layout? _layout;
+
+    /// <summary>The operator's Status-tab grid, without devices that no longer exist.</summary>
+    public Layout? Layout => _layout is null ? null : _layout with
+    {
+        Order = _layout.Order.Select(col => (IReadOnlyList<string>)col.Where(_entries.ContainsKey).ToArray()).ToArray(),
+    };
+
+    public async Task<Layout> SaveLayoutAsync(Layout request, CancellationToken ct)
+    {
+        if (request.Columns is < 0 or > 4)
+            throw new PowerStationRequestException(400, "Columns must be Auto or 1 to 4.");
+        var max = Math.Max(1, request.Columns);
+        var order = request.Order ?? [];
+        if (order.Count > max)
+            throw new PowerStationRequestException(400, $"The layout has {order.Count} columns but {max} were chosen.");
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var clean = new List<IReadOnlyList<string>>();
+        foreach (var col in order)
+        {
+            var ids = new List<string>();
+            foreach (var id in col ?? [])
+            {
+                if (string.IsNullOrWhiteSpace(id) || id.Length > 128 || !seen.Add(id))
+                    throw new PowerStationRequestException(400, "Each device can appear only once in the layout.");
+                if (_entries.ContainsKey(id)) ids.Add(id); // quietly drop devices removed meanwhile
+            }
+            clean.Add(ids);
+        }
+        var layout = new Layout { Columns = request.Columns, Order = clean };
+        await _store.SaveLayoutAsync(layout, ct).ConfigureAwait(false);
+        _layout = layout;
+        return Layout!;
+    }
+
     /// <summary>Raised after each poll that couldn't reach a device: (device id, address, consecutive failures).</summary>
     public event Action<string, string, int>? DeviceUnreachable;
 
@@ -111,6 +146,7 @@ public sealed class DeviceManager : IAsyncDisposable
             }
             _entries[record.DeviceId] = new Entry(record, CreateClient(record));
         }
+        _layout = await _store.LoadLayoutAsync(ct).ConfigureAwait(false);
         Scenes = new SceneManager(_store, this);
         await Scenes.LoadAsync(ct).ConfigureAwait(false);
         _logger.LogInformation("PowerStation loaded {Count} device(s) and {Scenes} scene(s)",

@@ -43,7 +43,14 @@ internal static class PowerStationEndpoints
                 pollIntervalMs = m.Options.PollIntervalMs,
                 devices = m.List(),
                 scenes = m.Scenes.List(),
+                layout = m.Layout,
             }))));
+
+        endpoints.MapPut("layout", (Handler)((HttpContext http) => Run(http, manager, async (m, ct) =>
+        {
+            var body = await ReadAsync<Layout>(http, ct).ConfigureAwait(false);
+            return await m.SaveLayoutAsync(body, ct).ConfigureAwait(false);
+        })));
 
         endpoints.MapPost("scenes", (Handler)((HttpContext http) => Run(http, manager, async (m, ct) =>
         {

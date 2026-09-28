@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "io.github.alarmguypro.powerstation",
   "name": "PowerStation",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": "KQ4WLR",
-  "description": "Control and monitor Shelly relays, plugs and dimmers on your LAN from Zeus: discovery, on/off, dimming, scenes and live power readings.",
+  "description": "Control and monitor Shelly relays, plugs and dimmers on your LAN from Zeus: discovery, on/off, dimming, scenes, a custom grid and live power readings.",
   "homepage": "https://github.com/AlarmGuyPro/zeus-powerstation",
   "license": "GPL-2.0-or-later",
   "sdk": {

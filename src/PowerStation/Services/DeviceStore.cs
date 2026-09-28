@@ -29,6 +29,15 @@ public interface IDeviceStore
     Task SaveScenesAsync(IReadOnlyList<Scene> scenes, CancellationToken ct);
     Task<DiscoverySettings> LoadDiscoverySettingsAsync(CancellationToken ct);
     Task SaveDiscoverySettingsAsync(DiscoverySettings settings, CancellationToken ct);
+    Task<Layout?> LoadLayoutAsync(CancellationToken ct);
+    Task SaveLayoutAsync(Layout layout, CancellationToken ct);
+}
+
+/// <summary>Status-tab grid: column count (0 = automatic) and device IDs per column, top to bottom.</summary>
+public sealed record Layout
+{
+    public int Columns { get; init; }
+    public IReadOnlyList<IReadOnlyList<string>> Order { get; init; } = [];
 }
 
 /// <summary>
@@ -41,6 +50,7 @@ public sealed class SettingsDeviceStore : IDeviceStore
     internal const string DevicesKey = "devices.v1";
     internal const string OptionsKey = "options.v1";
     internal const string ScenesKey = "scenes.v1";
+    internal const string LayoutKey = "layout.v1";
 
     private readonly IPluginSettings _settings;
 
@@ -76,6 +86,15 @@ public sealed class SettingsDeviceStore : IDeviceStore
 
     public Task SaveDiscoverySettingsAsync(DiscoverySettings settings, CancellationToken ct) =>
         _settings.SetAsync(DiscoveryService.SettingsKey, JsonSerializer.Serialize(settings, Json.Options), ct);
+
+    public async Task<Layout?> LoadLayoutAsync(CancellationToken ct)
+    {
+        var json = await _settings.GetAsync<string>(LayoutKey, ct).ConfigureAwait(false);
+        return string.IsNullOrWhiteSpace(json) ? null : JsonSerializer.Deserialize<Layout>(json, Json.Options);
+    }
+
+    public Task SaveLayoutAsync(Layout layout, CancellationToken ct) =>
+        _settings.SetAsync(LayoutKey, JsonSerializer.Serialize(layout, Json.Options), ct);
 
     public async Task<PowerStationOptions> LoadOptionsAsync(CancellationToken ct)
     {
