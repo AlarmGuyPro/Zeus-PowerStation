@@ -188,10 +188,11 @@ public sealed class DiscoveryService : IAsyncDisposable
             var addresses = networks.SelectMany(n => n.Hosts()).Distinct().ToArray();
             await _scanner.SweepAsync(addresses,
                 d => RecordFoundAsync(d, ct),
-                n => { lock (_lock) _scan = _scan with { Probed = n }; },
+                // Probes finish in parallel, so reports can arrive out of order: never count down.
+                n => { lock (_lock) if (n > _scan.Probed) _scan = _scan with { Probed = n }; },
                 ct).ConfigureAwait(false);
 
-            lock (_lock) _scan = _scan with { Running = false, Phase = "done", FinishedAt = _time.GetUtcNow() };
+            lock (_lock) _scan = _scan with { Running = false, Phase = "done", Probed = addresses.Length, FinishedAt = _time.GetUtcNow() };
         }
         catch (OperationCanceledException)
         {
