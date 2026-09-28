@@ -114,6 +114,7 @@ function AddDeviceForm({
   const [host, setHost] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
   const [probe, setProbe] = useState<ProbeResponse | null>(null);
   const [busy, setBusy] = useState<"check" | "add" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -143,7 +144,7 @@ function AddDeviceForm({
     setError(null);
     setAdded(null);
     try {
-      const device = await client.addDevice(host, name, password);
+      const device = await client.addDevice(host, name, password, username);
       onAdded(device);
       setAdded(device.displayName);
       setHost("");
@@ -184,6 +185,12 @@ function AddDeviceForm({
           <label htmlFor={`${ids}-name`}>Name (optional)</label>
           <input id={`${ids}-name`} value={name} onChange={(e) => setName(e.currentTarget.value)} placeholder="Amp PSU" maxLength={64} />
         </div>
+        {needsPassword && probe?.generation === 1 && (
+          <div className={c("field")}>
+            <label htmlFor={`${ids}-user`}>User name</label>
+            <input id={`${ids}-user`} value={username} placeholder="admin" autoComplete="off" onChange={(e) => setUsername(e.currentTarget.value)} />
+          </div>
+        )}
         {needsPassword && (
           <div className={c("field")}>
             <label htmlFor={`${ids}-pw`}>Device password</label>
@@ -258,6 +265,7 @@ function DeviceSettings({
   const [name, setName] = useState(device.name ?? "");
   const [host, setHost] = useState(device.host);
   const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
   const [channelNames, setChannelNames] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -481,6 +489,12 @@ function DeviceSettings({
 
           <h4 className={c("section-title")}>Password</h4>
           <div className={c("fields")}>
+            {device.generation === 1 && (
+              <div className={c("field")}>
+                <label htmlFor={`${ids}-user`}>User name</label>
+                <input id={`${ids}-user`} value={username} placeholder="admin" autoComplete="off" onChange={(e) => setUsername(e.currentTarget.value)} />
+              </div>
+            )}
             <div className={c("field")}>
               <label htmlFor={`${ids}-pw`}>{device.hasCredential ? "Change password" : "Device password"}</label>
               <input
@@ -507,7 +521,10 @@ function DeviceSettings({
                 run(
                   "password",
                   async () => {
-                    const result = await client.updateDevice(device.deviceId, { password });
+                    const result = await client.updateDevice(device.deviceId, {
+                      password,
+                      username: device.generation === 1 ? username || undefined : undefined,
+                    });
                     setPassword("");
                     return result;
                   },

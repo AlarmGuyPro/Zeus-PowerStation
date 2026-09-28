@@ -257,6 +257,7 @@ function FoundRow({
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(d.name ?? "");
   const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [justAdded, setJustAdded] = useState(false);
@@ -266,7 +267,7 @@ function FoundRow({
     setBusy(true);
     setError(null);
     try {
-      onAdded(await client.addDevice(d.host, name, password));
+      onAdded(await client.addDevice(d.host, name, password, username));
       setJustAdded(true);
       setOpen(false);
     } catch (err) {
@@ -321,6 +322,12 @@ function FoundRow({
             <label htmlFor={`${ids}-name`}>Name</label>
             <input id={`${ids}-name`} value={name} maxLength={64} placeholder={title} onChange={(e) => setName(e.currentTarget.value)} />
           </div>
+          {d.authRequired && d.generation === 1 && (
+            <div className={c("field")}>
+              <label htmlFor={`${ids}-user`}>User name</label>
+              <input id={`${ids}-user`} value={username} placeholder="admin" autoComplete="off" onChange={(e) => setUsername(e.currentTarget.value)} />
+            </div>
+          )}
           {d.authRequired && (
             <div className={c("field")}>
               <label htmlFor={`${ids}-pw`}>Device password</label>

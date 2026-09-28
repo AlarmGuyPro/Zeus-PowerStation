@@ -293,6 +293,8 @@ ${e("limits-name")} { display: grid; min-width: 0; overflow: hidden; white-space
 ${e("limits-name")} small, ${e("limits-rated")} small { font-size: 10.5px; color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; }
 ${e("limits-rated")} { display: grid; font-family: var(--font-mono); font-size: 11px; color: var(--fg-2); }
 ${e("limits")} ${e("inline-num")} { width: 100%; }
+${e("link-button")} { padding: 0; border: 0; background: none; color: var(--accent-bright); font: inherit; font-size: 10.5px; cursor: pointer; text-align: left; }
+${e("link-button")}:hover { text-decoration: underline; }
 ${e("events")} { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 ${e("event")} { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 10px; align-items: baseline; padding: 5px 8px; border-left: 3px solid var(--amber); background: var(--bg-2); border-radius: var(--r-xs); font-size: 11.5px; color: var(--fg-2); }
 ${e("event--limit")} { border-left-color: var(--tx); }

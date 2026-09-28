@@ -90,8 +90,35 @@ public sealed class FakePluginContext : IPluginContext
     public string PluginRootPath => Path.GetTempPath();
     public PluginCapabilities GrantedCapabilities => PluginCapabilities.NetworkAccess | PluginCapabilities.PersistSettings;
     public IPluginSettings Settings { get; } = new MemorySettings();
-    public IRadioStateReader? Radio => null;
+    public IRadioStateReader? Radio { get; set; }
     public IRadioController? RadioController => null;
+}
+
+/// <summary>A clock tests move by hand.</summary>
+public sealed class ManualTime(DateTimeOffset start) : TimeProvider
+{
+    public DateTimeOffset Now { get; set; } = start;
+    public override DateTimeOffset GetUtcNow() => Now;
+    public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.Utc;
+    public void Advance(TimeSpan by) => Now += by;
+}
+
+/// <summary>Stand-in for Zeus's read-only radio state.</summary>
+public sealed class FakeRadio : IRadioStateReader
+{
+    private long _hz = 14_074_000;
+    private string _mode = "DIGU";
+    private bool _mox;
+    public long FrequencyHz => _hz;
+    public string Mode => _mode;
+    public string Band => "";
+    public bool Mox => _mox;
+    public event Action<long>? FrequencyChanged;
+    public event Action<string>? ModeChanged;
+    public event Action<bool>? MoxChanged;
+    public void Tune(double mhz) { _hz = (long)Math.Round(mhz * 1e6); FrequencyChanged?.Invoke(_hz); }
+    public void SetMode(string mode) { _mode = mode; ModeChanged?.Invoke(mode); }
+    public void Key(bool on) { _mox = on; MoxChanged?.Invoke(on); }
 }
 
 public static class Program

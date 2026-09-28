@@ -6,14 +6,17 @@ using Microsoft.Extensions.Logging;
 
 namespace KQ4WLR.PowerStation.Services;
 
-public sealed record AddDeviceRequest(string? Host, string? Name, string? Password);
+public sealed record AddDeviceRequest(string? Host, string? Name, string? Password, string? Username = null);
 
 public sealed record UpdateDeviceRequest(
     string? Name,
     string? Host,
     string? Password,
     bool? ClearPassword,
-    Dictionary<string, string?>? ChannelNames);
+    Dictionary<string, string?>? ChannelNames,
+    Dictionary<string, int?>? SafetyMinutes = null,
+    Dictionary<string, LimitOverride?>? Limits = null,
+    string? Username = null);
 
 public sealed record ChannelCommand(
     string? Action,
@@ -122,6 +125,31 @@ public sealed class DeviceManager : IAsyncDisposable
     /// <summary>Raised after each poll that couldn't reach a device: (device id, address, consecutive failures).</summary>
     public event Action<string, string, int>? DeviceUnreachable;
 
+    /// <summary>Raised after each successful poll with the device's record and fresh channels.</summary>
+    public event Action<DeviceRecord, IReadOnlyList<ChannelState>>? Polled;
+
+    /// <summary>Adds computed fields (limits, alerts) to channels as the API returns them.</summary>
+    public Func<DeviceRecord, IReadOnlyList<ChannelState>, IReadOnlyList<ChannelState>>? Decorate { get; set; }
+
+    /// <summary>Raised when the operator changes an output from PowerStation (counts as activity).</summary>
+    public event Action? OperatorAction;
+
+    internal void NoteOperatorAction()
+    {
+        try { OperatorAction?.Invoke(); }
+        catch (Exception ex) { _logger.LogError(ex, "PowerStation: activity hook failed"); }
+    }
+
+    /// <summary>
+    /// Safety timers set by a scene for the outputs it turned on, until they
+    /// next go off. Keyed by "deviceId/channelKey". Not persisted: after a
+    /// restart the device-side timers simply run out.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, int> _sceneSafety = new(StringComparer.Ordinal);
+
+    /// <summary>Renew the device-side timer once this fraction of it has passed.</summary>
+    private const double RenewFraction = 1.0 / 3.0;
+
     private sealed class Entry(DeviceRecord record, IShellyClient client)
     {
         public DeviceRecord Record { get; set; } = record;
@@ -130,6 +158,8 @@ public sealed class DeviceManager : IAsyncDisposable
         public DateTimeOffset NextPoll { get; set; } = DateTimeOffset.MinValue;
         public int Failures { get; set; }
         public SemaphoreSlim PollGate { get; } = new(1, 1);
+        /// <summary>When each channel's safety timer was last set on the device.</summary>
+        public Dictionary<string, DateTimeOffset> SafetyRenewedAt { get; } = new(StringComparer.Ordinal);
     }
 
     // ------------------------------------------------------------ lifecycle
@@ -138,14 +168,7 @@ public sealed class DeviceManager : IAsyncDisposable
     {
         _options = await _store.LoadOptionsAsync(ct).ConfigureAwait(false);
         foreach (var record in await _store.LoadDevicesAsync(ct).ConfigureAwait(false))
-        {
-            if (record.Generation < 2)
-            {
-                _logger.LogWarning("Skipping Gen1 device {DeviceId}: Gen1 support is not in this version", record.DeviceId);
-                continue;
-            }
             _entries[record.DeviceId] = new Entry(record, CreateClient(record));
-        }
         _layout = await _store.LoadLayoutAsync(ct).ConfigureAwait(false);
         Scenes = new SceneManager(_store, this);
         await Scenes.LoadAsync(ct).ConfigureAwait(false);
@@ -207,13 +230,17 @@ public sealed class DeviceManager : IAsyncDisposable
             {
                 var channels = await entry.Client.GetStatusAsync(ct).ConfigureAwait(false);
                 entry.Failures = 0;
+                var named = ApplyNames(entry.Record, channels);
                 entry.Status = new DeviceStatus
                 {
                     Health = DeviceHealth.Online,
                     LastSeen = now,
                     LastPolled = now,
-                    Channels = ApplyNames(entry.Record, channels),
+                    Channels = named,
                 };
+                await RenewSafetyTimersAsync(entry, named, ct).ConfigureAwait(false);
+                try { Polled?.Invoke(entry.Record, named); }
+                catch (Exception hookError) { _logger.LogError(hookError, "PowerStation: readings hook failed"); }
             }
             catch (ShellyException ex)
             {
@@ -258,8 +285,62 @@ public sealed class DeviceManager : IAsyncDisposable
         return TimeSpan.FromMilliseconds(Math.Min(ms, _options.MaxBackoffMs));
     }
 
-    private static IReadOnlyList<ChannelState> ApplyNames(DeviceRecord record, IReadOnlyList<ChannelState> channels) =>
-        channels.Select(c => record.ChannelNames.TryGetValue(c.Key, out var name) ? c with { Name = name } : c).ToArray();
+    private IReadOnlyList<ChannelState> ApplyNames(DeviceRecord record, IReadOnlyList<ChannelState> channels) =>
+        channels.Select(c =>
+        {
+            var named = record.ChannelNames.TryGetValue(c.Key, out var name) ? c with { Name = name } : c;
+            var safety = EffectiveSafetyMinutes(record, c.Key);
+            return safety is null ? named : named with { SafetyMinutes = safety };
+        }).ToArray();
+
+    // ------------------------------------------------------------ safety timers
+
+    private int? EffectiveSafetyMinutes(DeviceRecord record, string channelKey)
+    {
+        int? own = record.SafetyMinutes.TryGetValue(channelKey, out var m) && m > 0 ? m : null;
+        int? scene = _sceneSafety.TryGetValue($"{record.DeviceId}/{channelKey}", out var s) ? s : null;
+        return own is null ? scene : scene is null ? own : Math.Max(own.Value, scene.Value);
+    }
+
+    /// <summary>
+    /// Keeps each protected output's device-side timer running while
+    /// PowerStation is alive. Renewing means "stay on, and switch off in N
+    /// minutes unless told again", so it's only ever sent for an output this
+    /// very poll saw on; if Zeus stops, the device switches the output off.
+    /// </summary>
+    private async Task RenewSafetyTimersAsync(Entry entry, IReadOnlyList<ChannelState> channels, CancellationToken ct)
+    {
+        foreach (var ch in channels)
+        {
+            if (ch.Kind == ChannelKind.Meter) continue;
+            var key = ch.Key;
+            if (!ch.On || ch.SafetyMinutes is not { } minutes)
+            {
+                entry.SafetyRenewedAt.Remove(key);
+                if (!ch.On) _sceneSafety.TryRemove($"{entry.Record.DeviceId}/{key}", out _);
+                continue;
+            }
+            var now = _time.GetUtcNow();
+            var period = TimeSpan.FromMinutes(minutes);
+            if (entry.SafetyRenewedAt.TryGetValue(key, out var last) && now - last < period * RenewFraction) continue;
+            try
+            {
+                await entry.Client.SetSafetyTimerAsync(ch.Kind, ch.Index, minutes * 60, ct).ConfigureAwait(false);
+                entry.SafetyRenewedAt[key] = now;
+            }
+            catch (ShellyException ex)
+            {
+                _logger.LogWarning("PowerStation: couldn't renew the safety timer on {Device} {Channel}: {Message}",
+                    entry.Record.DeviceId, key, ex.Message);
+            }
+        }
+    }
+
+    /// <summary>Called when a scene turns outputs on with its own safety timer.</summary>
+    internal void SetSceneSafety(IEnumerable<SceneTarget> targetsTurnedOn, int minutes)
+    {
+        foreach (var t in targetsTurnedOn) _sceneSafety[$"{t.DeviceId}/{t.ChannelKey}"] = minutes;
+    }
 
     // ------------------------------------------------------------ queries
 
@@ -271,7 +352,7 @@ public sealed class DeviceManager : IAsyncDisposable
 
     public DeviceView Get(string deviceId) => ToView(Find(deviceId));
 
-    private static DeviceView ToView(Entry e) => new()
+    private DeviceView ToView(Entry e) => new()
     {
         DeviceId = e.Record.DeviceId,
         DisplayName = e.Record.Name ?? e.Record.DeviceId,
@@ -282,10 +363,10 @@ public sealed class DeviceManager : IAsyncDisposable
         App = e.Record.App,
         Mac = e.Record.Mac,
         AuthRequired = e.Record.AuthRequired,
-        HasCredential = e.Record.Ha1 is not null,
+        HasCredential = e.Record.Ha1 is not null || e.Record.Gen1Password is not null,
         PreviousHost = e.Record.PreviousHost,
         HostChangedAt = e.Record.HostChangedAt,
-        Status = e.Status,
+        Status = Decorate is { } decorate ? e.Status with { Channels = decorate(e.Record, e.Status.Channels) } : e.Status,
     };
 
     private Entry Find(string deviceId) =>
@@ -306,17 +387,23 @@ public sealed class DeviceManager : IAsyncDisposable
     {
         var host = await ValidateHostAsync(request.Host, ct).ConfigureAwait(false);
         var identity = await Gen2Client.IdentifyAsync(_http, host, ct).ConfigureAwait(false);
-        if (identity.Generation < 2)
-            throw new ShellyException(ShellyErrorKind.Unsupported,
-                $"{identity.Model ?? "This"} is a Gen1 Shelly. Gen1 support is coming in the next PowerStation update.");
 
-        string? ha1 = null;
+        string? ha1 = null, gen1User = null, gen1Password = null;
         if (identity.AuthRequired)
         {
             if (string.IsNullOrEmpty(request.Password))
                 throw new PowerStationRequestException(400,
                     "This device has a password set. Enter it to add the device.");
-            ha1 = await Gen2Client.DeriveHa1Async(_http, host, request.Password, ct).ConfigureAwait(false);
+            if (identity.Generation == 1)
+            {
+                gen1User = CleanUser(request.Username);
+                await Gen1Client.VerifyAsync(_http, host, gen1User, request.Password, ct).ConfigureAwait(false);
+                gen1Password = request.Password;
+            }
+            else
+            {
+                ha1 = await Gen2Client.DeriveHa1Async(_http, host, request.Password, ct).ConfigureAwait(false);
+            }
         }
 
         await _mutate.WaitAsync(ct).ConfigureAwait(false);
@@ -333,6 +420,8 @@ public sealed class DeviceManager : IAsyncDisposable
                     Name = name ?? existing.Record.Name,
                     AuthRequired = identity.AuthRequired,
                     Ha1 = ha1 ?? (identity.AuthRequired ? existing.Record.Ha1 : null),
+                    Gen1User = gen1Password is not null ? gen1User : identity.AuthRequired ? existing.Record.Gen1User : null,
+                    Gen1Password = gen1Password ?? (identity.AuthRequired ? existing.Record.Gen1Password : null),
                     Model = identity.Model,
                     App = identity.App,
                 };
@@ -350,6 +439,8 @@ public sealed class DeviceManager : IAsyncDisposable
                     Mac = identity.Mac,
                     AuthRequired = identity.AuthRequired,
                     Ha1 = ha1,
+                    Gen1User = gen1User,
+                    Gen1Password = gen1Password,
                     AddedAt = _time.GetUtcNow(),
                 };
             }
@@ -381,11 +472,51 @@ public sealed class DeviceManager : IAsyncDisposable
             if (!string.Equals(host, current.Host, StringComparison.OrdinalIgnoreCase))
                 updated = updated with { Host = host, AuthRequired = identity.AuthRequired, PreviousHost = null, HostChangedAt = null };
         }
-        if (request.ClearPassword == true) updated = updated with { Ha1 = null };
+        if (request.ClearPassword == true) updated = updated with { Ha1 = null, Gen1User = null, Gen1Password = null };
         if (!string.IsNullOrEmpty(request.Password))
         {
-            var ha1 = await Gen2Client.DeriveHa1Async(_http, updated.Host, request.Password, ct).ConfigureAwait(false);
-            updated = updated with { Ha1 = ha1, AuthRequired = true };
+            if (updated.Generation == 1)
+            {
+                var user = CleanUser(request.Username ?? updated.Gen1User);
+                await Gen1Client.VerifyAsync(_http, updated.Host, user, request.Password, ct).ConfigureAwait(false);
+                updated = updated with { Gen1User = user, Gen1Password = request.Password, AuthRequired = true };
+            }
+            else
+            {
+                var ha1 = await Gen2Client.DeriveHa1Async(_http, updated.Host, request.Password, ct).ConfigureAwait(false);
+                updated = updated with { Ha1 = ha1, AuthRequired = true };
+            }
+        }
+        if (request.SafetyMinutes is not null)
+        {
+            var safety = new Dictionary<string, int>(updated.SafetyMinutes, StringComparer.Ordinal);
+            foreach (var (key, minutes) in request.SafetyMinutes)
+            {
+                if (!IsChannelKey(key) || key.StartsWith("emeter:", StringComparison.Ordinal))
+                    throw new PowerStationRequestException(400, $"Unknown output \"{key}\".");
+                if (minutes is null or 0) safety.Remove(key);
+                else if (minutes is < 1 or > 1440)
+                    throw new PowerStationRequestException(400, "Safety timers must be between 1 and 1,440 minutes.");
+                else safety[key] = minutes.Value;
+            }
+            updated = updated with { SafetyMinutes = safety };
+        }
+        if (request.Limits is not null)
+        {
+            var limits = new Dictionary<string, LimitOverride>(updated.Limits, StringComparer.Ordinal);
+            foreach (var (key, value) in request.Limits)
+            {
+                if (!IsChannelKey(key)) throw new PowerStationRequestException(400, $"Unknown channel \"{key}\".");
+                // The operator's row replaces any earlier one; an empty row goes back to the rating.
+                if (value is null || value is { WarnA: null, MaxA: null, MinOnA: null }) { limits.Remove(key); continue; }
+                var merged = value;
+                if (merged.WarnA is < 0 or > 500 || merged.MaxA is < 0 or > 500 || merged.MinOnA is < 0 or > 500)
+                    throw new PowerStationRequestException(400, "Current limits must be between 0 and 500 A.");
+                if (merged.WarnA is { } w && merged.MaxA is { } mx && w > mx)
+                    throw new PowerStationRequestException(400, "The warning level can't be above the limit.");
+                limits[key] = merged;
+            }
+            updated = updated with { Limits = limits };
         }
         if (request.ChannelNames is not null)
         {
@@ -522,7 +653,7 @@ public sealed class DeviceManager : IAsyncDisposable
         string deviceId, string kindText, int index, ChannelCommand command, CancellationToken ct)
     {
         var entry = Find(deviceId);
-        if (!Enum.TryParse<ChannelKind>(kindText, ignoreCase: true, out var kind))
+        if (!Enum.TryParse<ChannelKind>(kindText, ignoreCase: true, out var kind) || kind == ChannelKind.Meter)
             throw new PowerStationRequestException(400, $"Unknown channel type \"{kindText}\".");
         if (index is < 0 or > 15)
             throw new PowerStationRequestException(400, "Channel number out of range.");
@@ -563,9 +694,21 @@ public sealed class DeviceManager : IAsyncDisposable
                 throw new PowerStationRequestException(400, "Action must be on, off, toggle, brightness or dim.");
         }
 
+        NoteOperatorAction();
         await PollEntryAsync(entry, ct).ConfigureAwait(false);
         return ToView(entry);
     }
+
+    /// <summary>Current state of one output, if the device has been polled.</summary>
+    internal ChannelState? GetChannel(string deviceId, string channelKey) =>
+        _entries.TryGetValue(deviceId, out var e) ? e.Status.Channels.FirstOrDefault(c => c.Key == channelKey) : null;
+
+    internal bool HasChannel(string deviceId, ChannelKind kind, int index) =>
+        _entries.TryGetValue(deviceId, out var e) &&
+        (e.Status.Channels.Count == 0 || e.Status.Channels.Any(c => c.Kind == kind && c.Index == index));
+
+    internal string DisplayName(string deviceId) =>
+        _entries.TryGetValue(deviceId, out var e) ? e.Record.Name ?? e.Record.DeviceId : deviceId;
 
     // ------------------------------------------------------------ helpers
 
@@ -573,7 +716,8 @@ public sealed class DeviceManager : IAsyncDisposable
     {
         if (_entries.TryGetValue(record.DeviceId, out var existing))
         {
-            var clientChanged = existing.Record.Host != record.Host || existing.Record.Ha1 != record.Ha1;
+            var clientChanged = existing.Record.Host != record.Host || existing.Record.Ha1 != record.Ha1 ||
+                                existing.Record.Gen1User != record.Gen1User || existing.Record.Gen1Password != record.Gen1Password;
             existing.Record = record;
             if (clientChanged)
             {
@@ -593,7 +737,18 @@ public sealed class DeviceManager : IAsyncDisposable
         _store.SaveDevicesAsync(
             _entries.Values.Select(e => e.Record).OrderBy(r => r.AddedAt).ToArray(), ct);
 
-    private IShellyClient CreateClient(DeviceRecord record) => new Gen2Client(_http, record.Host, record.Ha1);
+    private IShellyClient CreateClient(DeviceRecord record) =>
+        record.Generation == 1
+            ? new Gen1Client(_http, record.Host, record.Gen1User, record.Gen1Password)
+            : new Gen2Client(_http, record.Host, record.Ha1);
+
+    private static string CleanUser(string? user)
+    {
+        var u = user?.Trim();
+        if (string.IsNullOrEmpty(u)) return "admin";
+        if (u.Length > 64 || u.Contains(':')) throw new PowerStationRequestException(400, "That user name isn't valid.");
+        return u;
+    }
 
     private async Task<string> ValidateHostAsync(string? host, CancellationToken ct)
     {
@@ -605,7 +760,8 @@ public sealed class DeviceManager : IAsyncDisposable
     }
 
     private static bool IsChannelKey(string key) =>
-        (key.StartsWith("switch:", StringComparison.Ordinal) || key.StartsWith("light:", StringComparison.Ordinal)) &&
+        (key.StartsWith("switch:", StringComparison.Ordinal) || key.StartsWith("light:", StringComparison.Ordinal) ||
+         key.StartsWith("emeter:", StringComparison.Ordinal)) &&
         int.TryParse(key[(key.IndexOf(':') + 1)..], out var i) && i is >= 0 and <= 15;
 
     private static string? Clean(string? value)

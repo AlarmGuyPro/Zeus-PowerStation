@@ -16,8 +16,64 @@ namespace KQ4WLR.PowerStation.Api;
 internal static class PowerStationEndpoints
 {
     public static void Map(
-        IEndpointRouteBuilder endpoints, Func<DeviceManager?> manager, Func<DiscoveryService?> discovery, string version)
+        IEndpointRouteBuilder endpoints, Func<DeviceManager?> manager, Func<DiscoveryService?> discovery,
+        Func<AutomationService?> automations, Func<ReadingsService?> readings, string version)
     {
+        AutomationService Auto() => automations() ?? throw new PowerStationRequestException(503, "PowerStation is still starting.");
+        ReadingsService Read() => readings() ?? throw new PowerStationRequestException(503, "PowerStation is still starting.");
+
+        endpoints.MapPost("rules", (Handler)((HttpContext http) => Run(http, manager, async (_, ct) =>
+        {
+            var body = await ReadAsync<RuleRequest>(http, ct).ConfigureAwait(false);
+            return await Auto().CreateAsync(body, ct).ConfigureAwait(false);
+        })));
+
+        endpoints.MapPut("rules/{id}", (HttpContext http, string id) => Run(http, manager, async (_, ct) =>
+        {
+            var body = await ReadAsync<RuleRequest>(http, ct).ConfigureAwait(false);
+            return await Auto().UpdateAsync(id, body, ct).ConfigureAwait(false);
+        }));
+
+        endpoints.MapDelete("rules/{id}", (HttpContext http, string id) => Run(http, manager, async (_, ct) =>
+        {
+            await Auto().DeleteAsync(id, ct).ConfigureAwait(false);
+            return new { removed = id };
+        }));
+
+        endpoints.MapPost("rules/{id}/test", (HttpContext http, string id) => Run(http, manager, (_, _) =>
+        {
+            Auto().Test(id);
+            return Task.FromResult<object?>(Auto().View());
+        }));
+
+        endpoints.MapPut("automation", (Handler)((HttpContext http) => Run(http, manager, async (_, ct) =>
+        {
+            var body = await ReadAsync<AutomationRequest>(http, ct).ConfigureAwait(false);
+            if (body.Paused is { } paused) await Auto().SetPausedAsync(paused, ct).ConfigureAwait(false);
+            return Auto().View();
+        })));
+
+        endpoints.MapPost("automation/activity", (Handler)((HttpContext http) => Run(http, manager, (_, _) =>
+        {
+            Auto().NoteActivity();
+            return Task.FromResult<object?>(Auto().View());
+        })));
+
+        endpoints.MapPost("automation/extend", (Handler)((HttpContext http) => Run(http, manager, (_, _) =>
+        {
+            Auto().ExtendIdle();
+            return Task.FromResult<object?>(Auto().View());
+        })));
+
+        endpoints.MapPut("readings", (Handler)((HttpContext http) => Run(http, manager, async (_, ct) =>
+        {
+            var body = await ReadAsync<ReadingsRequest>(http, ct).ConfigureAwait(false);
+            return await Read().UpdateAsync(body, ct).ConfigureAwait(false);
+        })));
+
+        endpoints.MapDelete("readings/events", (Handler)((HttpContext http) => Run(http, manager, async (_, ct) =>
+            await Read().ClearAsync(ct).ConfigureAwait(false))));
+
         endpoints.MapGet("discovery", (Handler)((HttpContext http) => Run(http, manager, (_, _) =>
             Task.FromResult<object?>(Discovery(discovery).View()))));
 
@@ -44,6 +100,9 @@ internal static class PowerStationEndpoints
                 devices = m.List(),
                 scenes = m.Scenes.List(),
                 layout = m.Layout,
+                rules = automations()?.RulesView(),
+                automation = automations()?.View(),
+                readings = readings()?.View(),
             }))));
 
         endpoints.MapPut("layout", (Handler)((HttpContext http) => Run(http, manager, async (m, ct) =>
@@ -73,6 +132,7 @@ internal static class PowerStationEndpoints
         endpoints.MapPost("scenes/{id}/run", (HttpContext http, string id) => Run(http, manager, async (m, ct) =>
         {
             var body = await ReadOptionalAsync<SceneRunRequest>(http, ct).ConfigureAwait(false);
+            m.NoteOperatorAction();
             return await m.Scenes.RunAsync(id, body, ct).ConfigureAwait(false);
         }));
 
@@ -89,7 +149,7 @@ internal static class PowerStationEndpoints
                 identity.Firmware,
                 identity.AuthRequired,
                 identity.DefaultName,
-                supported = identity.Generation >= 2,
+                supported = identity.Generation >= 2 || identity.App is not null,
             };
         })));
 

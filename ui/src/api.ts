@@ -338,14 +338,16 @@ export function createClient(api: ZeusPluginApi) {
     clearReadingEvents: () => call<ReadingsView>("DELETE", "/readings/events"),
     status: () => call<StatusResponse>("GET", "/status"),
     probe: (host: string) => call<ProbeResponse>("POST", "/devices/probe", { host }),
-    addDevice: (host: string, name?: string, password?: string) =>
-      call<DeviceView>("POST", "/devices", { host, name: name || null, password: password || null }),
+    addDevice: (host: string, name?: string, password?: string, username?: string) =>
+      call<DeviceView>("POST", "/devices", { host, name: name || null, password: password || null, username: username || null }),
     updateDevice: (
       deviceId: string,
       patch: {
         name?: string | null;
         host?: string;
         password?: string;
+        /** Gen1 only: the user name set on the device (default admin). */
+        username?: string;
         clearPassword?: boolean;
         channelNames?: Record<string, string | null>;
         safetyMinutes?: Record<string, number | null>;

@@ -155,7 +155,16 @@ export function ReadingsSettings({ client, status }: { client: PowerStationClien
               </span>
               <span role="cell" className={c("limits-rated")}>
                 {l?.ratedA ? fmt.amps(l.ratedA).replace(".00", "") : "—"}
-                {l?.custom && <small>custom</small>}
+                {l?.custom && (
+                  <button
+                    type="button"
+                    className={c("link-button")}
+                    title="Go back to the device rating"
+                    onClick={() => setLimits((prev) => ({ ...prev, [key]: { warnA: null, maxA: null, minOnA: null } }))}
+                  >
+                    custom · reset
+                  </button>
+                )}
               </span>
               {(["warnA", "maxA", "minOnA"] as const).map((f) => (
                 <span role="cell" key={f}>
@@ -184,10 +193,15 @@ export function ReadingsSettings({ client, status }: { client: PowerStationClien
             act(
               "limits",
               async () => {
-                const byDevice = new Map<string, Record<string, (typeof limits)[string]>>();
-                for (const [k, v] of Object.entries(limits)) {
+                // Send each changed row whole; a row left empty goes back to the device rating.
+                const byDevice = new Map<string, Record<string, (typeof limits)[string] | null>>();
+                for (const [k, draft] of Object.entries(limits)) {
                   const [id, ch] = k.split("|");
-                  byDevice.set(id, { ...byDevice.get(id), [ch]: v });
+                  const current = metered.find((m) => m.key === k)?.ch.limits;
+                  const pick = (f: "warnA" | "maxA" | "minOnA") => (f in draft ? draft[f] ?? null : current?.custom ? current[f] ?? null : null);
+                  const row = { warnA: pick("warnA"), maxA: pick("maxA"), minOnA: pick("minOnA") };
+                  const empty = row.warnA === null && row.maxA === null && row.minOnA === null;
+                  byDevice.set(id, { ...byDevice.get(id), [ch]: empty ? null : row });
                 }
                 for (const [id, map] of byDevice) status.applyDevice(await client.updateDevice(id, { limits: map }));
                 setLimits({});

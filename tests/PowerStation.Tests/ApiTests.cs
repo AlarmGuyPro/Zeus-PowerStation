@@ -157,16 +157,6 @@ public static class ApiTests
     }
 
     [Test]
-    public static async Task Gen1DeviceIsReportedAsComingSoon()
-    {
-        await using var fake = await FakeShellyGen2.StartAsync(gen: 1);
-        await using var host = await PluginHost.StartAsync();
-        var (status, body) = await host.SendAsync(HttpMethod.Post, "devices", new { host = fake.Host });
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, status, "gen1");
-        Assert.Contains("Gen1", body!["error"]!.GetValue<string>());
-    }
-
-    [Test]
     public static async Task RejectsBadInput()
     {
         await using var fake = await Plug();

@@ -3,12 +3,14 @@ using System.Text.Json.Serialization;
 
 namespace KQ4WLR.PowerStation.Model;
 
-/// <summary>Kind of controllable output on a Shelly device.</summary>
+/// <summary>Kind of channel on a Shelly device.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<ChannelKind>))]
 public enum ChannelKind
 {
     Switch,
     Light,
+    /// <summary>Read-only energy meter (ShellyEM clamps). Can't be switched.</summary>
+    Meter,
 }
 
 /// <summary>What PowerStation knows about a device before it is saved.</summary>
@@ -43,6 +45,19 @@ public sealed record DeviceRecord
     /// <summary>Gen2+: SHA256(admin:realm:password). Never the password.</summary>
     public string? Ha1 { get; init; }
 
+    /// <summary>
+    /// Gen1 only: HTTP Basic credentials. Gen1 firmware has no hashed form,
+    /// so the password is stored as entered; the UI says so.
+    /// </summary>
+    public string? Gen1User { get; init; }
+    public string? Gen1Password { get; init; }
+
+    /// <summary>Device-side safety timer per channel key, in minutes.</summary>
+    public Dictionary<string, int> SafetyMinutes { get; init; } = new();
+
+    /// <summary>Operator's current limits per channel key, replacing the model rating defaults.</summary>
+    public Dictionary<string, LimitOverride> Limits { get; init; } = new();
+
     /// <summary>Operator-assigned names per channel key (e.g. <c>switch:0</c>).</summary>
     public Dictionary<string, string> ChannelNames { get; init; } = new();
 
@@ -73,8 +88,47 @@ public sealed record ChannelState
     public IReadOnlyList<string> Errors { get; init; } = [];
     public IReadOnlyList<string> Flags { get; init; } = [];
 
+    /// <summary>When a flip-back timer on the device will change this output, if one is running.</summary>
+    public DateTimeOffset? TimerEndsAt { get; init; }
+
+    /// <summary>Safety timer in effect for this output, in minutes (null = none).</summary>
+    public int? SafetyMinutes { get; init; }
+
+    /// <summary>Current limits in effect (model rating or the operator's own).</summary>
+    public CurrentLimits? Limits { get; init; }
+
+    /// <summary>Readings outside their normal range right now.</summary>
+    public IReadOnlyList<ReadingAlert> Alerts { get; init; } = [];
+
     /// <summary>True when the device reports any metering value for this channel.</summary>
     public bool Metered => PowerW is not null || VoltageV is not null || CurrentA is not null;
+}
+
+public sealed record LimitOverride
+{
+    public double? WarnA { get; init; }
+    public double? MaxA { get; init; }
+    public double? MinOnA { get; init; }
+}
+
+public sealed record CurrentLimits
+{
+    public double? RatedA { get; init; }
+    public double? WarnA { get; init; }
+    public double? MaxA { get; init; }
+    public double? MinOnA { get; init; }
+    public bool Custom { get; init; }
+}
+
+public sealed record ReadingAlert
+{
+    /// <summary>voltageHigh, voltageLow, currentHigh or currentLow.</summary>
+    public required string Kind { get; init; }
+    /// <summary>warn (outside normal) or limit (outside the hard limit).</summary>
+    public required string Level { get; init; }
+    public required double Value { get; init; }
+    public required double Threshold { get; init; }
+    public required DateTimeOffset Since { get; init; }
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<DeviceHealth>))]

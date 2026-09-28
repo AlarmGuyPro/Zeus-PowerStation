@@ -1,75 +1,124 @@
 # PowerStation for Zeus
 
-Control and monitor the Shelly relays, plugs and dimmers in your shack from
-inside Zeus. By KQ4WLR.
+Control and monitor the Shelly relays, plugs, dimmers and energy meters in
+your shack from inside Zeus, and let Zeus switch them for you. By KQ4WLR.
 
-## What it does (version 0.4.2)
+## What it does (version 0.5.0)
 
-- **Turn outputs on and off** on Shelly Gen2, Gen3, Gen4 and "Powered by
-  Shelly" devices (Plus / Pro relays, Pro 3, Pro 4PM, Plug US, Dimmer Gen3,
-  Ogemray 25A and similar).
-- **Dim lights** on a drawing of the wall dimmer: click one of its seven
-  level dots to jump to that level, the square to switch on and off, or
-  − and + for 10% steps.
-- **Your own grid**: devices snap to equal cells that fill the panel, and
-  cards in a row share a height. Choose Auto or 1 to 4 columns on the
-  Status tab, then **Arrange** to drag a device onto another to swap
-  places (or use the arrow buttons). The column count you pick is kept
-  unless the panel is too narrow for it, in which case a note says so. The
-  layout is saved and survives Zeus restarts.
-- **Live readings** for metering devices: watts, volts, amps, energy (kWh)
-  and device temperature, plus a running total for the whole station.
-- **Warnings** the device raises, such as overpower or overheating.
-- **Finds your devices**: a scan on the Setup tab looks across the networks
-  you list (each VLAN your Shellies use) and listens for devices announcing
-  themselves on this computer's network (mDNS). Add what it finds in one
-  click.
-- **Keeps up with DHCP**: devices are tracked by their Shelly device ID, not
-  their address. If a device stops answering, PowerStation looks for it on
-  its old network and your saved networks and moves it to its new address
-  automatically. You don't need DHCP reservations.
-- **Status lamps** on every output: green on, orange off, blue for a dimmer
-  on below 100%, grey when the device isn't answering.
-- **Scenes**: a named set of outputs and dimmer levels applied in one click,
-  with an optional fade for dimmers. Every scene also has **All off**, so a
-  scene doubles as an on/off group. If one device is offline, the rest of
-  the scene still runs and PowerStation tells you what was missed.
-
-Gen1 devices (a scan shows them as "coming soon") and automations (Zeus
-start/stop, TX, band, idle time) are coming in the next versions.
+- **Turn outputs on and off** on Shelly Gen1, Gen2, Gen3, Gen4 and "Powered
+  by Shelly" devices: Shelly 1 / 1PM / 2.5 (relay mode), Plug and Plug S,
+  Dimmer 1 and 2, ShellyEM, Plus and Pro relays, Pro 3, Pro 4PM, Plug US,
+  Dimmer Gen3, wall dimmers, Ogemray 25A and similar.
+- **Dim lights** on a drawing of the wall dimmer: click a level dot, the
+  square to switch on and off, or − and + for 10% steps.
+- **Scenes**: a named set of outputs and dimmer levels in one click, with an
+  optional fade, and **All off**. They sit in their own box at the top of the
+  panel.
+- **Live readings**: watts, volts, amps, energy and temperature, plus a total
+  for the station. The ShellyEM shows its relay and both clamp meters.
+- **Normal ranges**: mains voltage and each output's current are checked
+  against a normal range. Out of range shows amber, past the limit shows red,
+  and every excursion is logged.
+- **Rules** that switch things for you when Zeus starts or closes, when you
+  transmit (on-air light only), when you change band or tune into a
+  frequency range, after the station has been idle, or at a time of day.
+- **Safety timers**: the device itself switches an output off if Zeus stops
+  looking after it (a crash, a power cut, or just closing Zeus).
+- **Finds your devices** on your networks and VLANs and follows them when
+  DHCP gives them a new address.
 
 ## Setting up
 
 1. Set each device up with the **Shelly app** first. DHCP addresses are fine.
-2. In Zeus, add the **PowerStation** panel (Switches category). It has two
-   tabs: **Status** for everyday control and **Setup** for devices and scenes.
-   On first run it opens on Setup.
-3. On **Setup**, under **Find devices**, add each network your Shellies are
-   on (for example `192.168.50.0/24`) and choose **Scan now**. Choose **Add**
-   next to each device you want. You can also add a device by its address.
-   If the device has a password, you'll be asked for it.
-4. To make a scene, scroll to **Scenes** on the Setup tab and choose **New
-   scene**. Tick the outputs, pick On or Off and a level for each dimmer, or
-   press **Use current states** to capture the station as it is. Scene
-   buttons then appear at the top of the Status tab.
+2. In Zeus, add the **PowerStation** panel (Switches category). The gear at
+   the top right opens setup; **Done** closes it. On first run it opens there.
+3. **Setup › Devices › Find devices**: add each network your Shellies are on
+   (for example `192.168.50.0/24`) and choose **Scan now**, then **Add** next
+   to each device. You can also add a device by its address.
+4. **Setup › Layout**: pick Auto or 1 to 4 columns, and **Arrange cards…**
+   to drag them into place on the panel.
+5. Optional: add the small **PowerStation Idle** panel somewhere always
+   visible. It shows the idle countdown with **I'm here** and **+30 min**.
 
-**PowerStation Setup** in the panel list is the same panel opening on the
-Setup tab, if you'd like both views docked side by side.
+When you update from 0.4, remove the old **PowerStation Setup** panel if you
+had it docked; setup now lives behind the gear.
+
+### Passwords
+
+- **Gen2 and newer**: the password is checked with the device and stored only
+  as a one-way hash.
+- **Gen1** devices use plain HTTP login and have no hashed form, so PowerStation
+  stores a Gen1 password as you enter it, in Zeus's settings on this computer.
+  Enter the user name too if you changed it from `admin`.
+
+## Rules (Setup › Automations)
+
+Each rule reads **When** something happens **then** do something:
+apply a scene, turn a scene all off, or turn one output on or off (dimmers
+can ramp). Rules for lasting conditions also say what happens **when it
+ends**: put back how it was, turn it off, something else, or leave it.
+
+| When | Settings |
+|---|---|
+| Zeus starts | Delay |
+| Zeus closes | Runs at once. Only seen when Zeus shuts down normally |
+| Transmitting | **On-air light only.** Debounce, delay and a hold after TX |
+| Band | One or more bands. Debounce, delay, end wait |
+| Frequency range | From / to in MHz. Debounce, delay, end wait |
+| Idle | Minutes without activity, warning time, extend step |
+| Time of day | Runs at a time only if the station has been idle; otherwise checks again later |
+
+- **Nothing switches while you transmit**, except the on-air light. Other
+  rules wait until TX ends; the panel shows what's waiting.
+- **Don't rely on the TX rule for safety.** The light follows TX over the
+  network and can lag or miss a change. Never use it for amplifiers,
+  antennas or T/R sequencing.
+- **Put back how it was** only restores outputs nobody changed in the
+  meantime.
+- **Idle** means no tuning, band or mode change, TX, or use of PowerStation.
+  Zeus doesn't share mouse or keyboard activity, so just listening counts as
+  idle: press **I'm here** on the countdown.
+- The scene editor can add "apply when Zeus starts" and "all off when Zeus
+  closes" to any scene; they show up as ordinary rules.
+- **Test** runs a rule's action now. The switch at the top pauses all rules.
+
+## Safety timers
+
+Set one per output (**Setup › Devices › Edit**) or per scene (for the
+outputs the scene turns on). While Zeus runs, PowerStation keeps renewing
+the timer; the device switches the output off by itself that many minutes
+after the renewals stop. That covers a crash or power cut. It also means a
+protected output turns off after its timer when you close Zeus normally.
+Timers are only ever renewed on an output a poll has just seen on.
+
+## Readings (Setup › Readings)
+
+- **Mains voltage**: 120 V (US/Canada service, ANSI C84.1: normal
+  114–126 V, limit 110–127 V), 230 V (normal ±6%, limit ±10%), or your own.
+  Mains is one supply, so a sag or surge is reported once for the station.
+- **Current per output**: defaults from each device's rating where it's known
+  (warn at 80%, limit at 100%). Set your own values to match a breaker, cord
+  or load. **Low when on** warns if an output is on but the load draws almost
+  nothing, such as a tripped supply or a blown fuse.
+- A reading must stay out of range for 5 seconds (adjustable) before it
+  counts, so switch-on inrush doesn't.
+- These are warnings only. The Shelly's own overpower and overvoltage
+  protection does any switching.
+
+## Networks
 
 Devices on another VLAN work as long as the Zeus computer can reach them on
 port 80. mDNS only reaches this computer's own network; the scan covers other
-VLANs. A scan covers up to 4,096 addresses at a time (a /20, or several
-/24s). If Windows asks whether Zeus may use the network, allow it on private
-networks so mDNS can work.
+VLANs, up to 4,096 addresses at a time. If Windows asks whether Zeus may use
+the network, allow it on private networks.
 
 ## Privacy and safety
 
-- PowerStation only talks to devices on your local network (private,
-  link-local and loopback addresses). It never contacts the Internet.
-- Device passwords are checked with the device and then stored only as a
-  one-way hash (the device's own digest format), never as the password.
-- PowerStation never controls your radio. It does not key the transmitter
-  and does not touch PureSignal.
+- PowerStation only talks to devices on your local network. It never
+  contacts the Internet.
+- It reads the radio's frequency, mode and TX state to run your rules. It
+  never controls the radio: it doesn't tune, key the transmitter or touch
+  PureSignal.
 - Triac dimmers and some switching supplies can create RF noise. Keep them
   away from antennas and feed lines, and add ferrites if you hear hash.
 

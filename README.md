@@ -1,8 +1,8 @@
 # PowerStation for Zeus
 
 A [Zeus SDR](https://github.com/Zeus-SDR/zeus-community-features) community
-feature by **KQ4WLR** for controlling and monitoring Shelly relays, plugs and
-dimmers on the shack LAN.
+feature by **KQ4WLR** for controlling and monitoring Shelly relays, plugs,
+dimmers and energy meters on the shack LAN, with rules driven by Zeus.
 
 Operator documentation lives in [`src/PowerStation/README.md`](src/PowerStation/README.md)
 and ships inside the package.
@@ -18,23 +18,22 @@ and ships inside the package.
 | 2a+ | Column grid with drag-to-arrange (saved), wall-dimmer drawing, orange off lamp | **Done** (0.4.0) |
 | 2a+ | Cards snap to equal grid cells that fill the panel (from operator test) | **Done** (0.4.1) |
 | 2a+ | Chosen column count honoured down to narrow cards; visible note when the panel is too narrow | **Done** (0.4.2) |
-| 2b | Gen1 client (Plug, 1/1PM, 2.5, Dimmer 1/2) | Next |
-| 3 | Automations: Zeus start/stop, MOX, band, mode, frequency, idle with warning pill, restore-on-return, TX deferral, device-side dead-man timers | Planned |
-| 4 | Polish, in-Zeus screenshots, catalog submission | Planned |
+| 3 | Gear-cog setup; Gen1 (ShellyEM, Shelly 1, 1PM, 2.5, Plug/Plug S, Dimmer 1/2); rules on Zeus start/close, TX (on-air light), band, frequency, idle and time of day, with TX deferral and put-back-on-return; device-side safety timers; normal ranges for mains voltage and output current with an event log | **Done** (0.5.0) |
+| 4 | Rules on readings (low battery, AC out of range), polish, in-Zeus screenshots, catalog submission | Planned |
 
 ## Layout
 
 ```
 sdk/                         Zeus plugin contracts, vendored unchanged (GPL-2.0-or-later)
 src/PowerStation/            The feature: C# backend, plugin.json, operator README, build-package.ps1
-  Shelly/                    Gen2 RPC client, SHA-256 digest auth, address validation
+  Shelly/                    Gen1 REST and Gen2 RPC clients, digest and Basic auth, address validation
   Discovery/                 Shelly-only mDNS query and network sweep
-  Services/                  Device list, scenes, discovery and re-find, persistence, polling
+  Services/                  Devices, scenes, rules, readings, discovery and re-find, persistence, polling
   Api/                       HTTP endpoints under /api/plugins/io.github.alarmguypro.powerstation/
 ui/                          React panels (TypeScript), bundled to src/PowerStation/ui/powerstation.js
   preview/                   Local preview with a mocked backend (not packaged)
-tests/PowerStation.Tests/    Test runner plus an in-process Shelly Gen2 simulator
-docs/screenshots/            UI states captured from the preview harness
+tests/PowerStation.Tests/    Test runner plus in-process Shelly Gen1 and Gen2 simulators
+docs/screenshots/            UI states captured from the mockup harness
 ```
 
 ## Build
@@ -52,8 +51,9 @@ The package is written to
 `artifacts/io.github.alarmguypro.powerstation/io.github.alarmguypro.powerstation-<version>.zip`.
 Install it in Zeus with **Features → Community → Install local feature**.
 
-The tests never touch real hardware: they run against `FakeShellyGen2`, an
-in-process device simulator with its own independent digest-auth check.
+The tests never touch real hardware: they run against `FakeShellyGen1` and
+`FakeShellyGen2`, in-process device simulators (the Gen2 one has its own
+independent digest-auth check), a pretend radio and a hand-moved clock.
 
 To preview the panels outside Zeus: `cd ui && node build.mjs --preview`, then
 serve `ui/preview/` with any static file server and open `index.html`
@@ -61,14 +61,22 @@ serve `ui/preview/` with any static file server and open `index.html`
 
 ## Design notes
 
-- **Capabilities:** `NetworkAccess` and `PersistSettings` only. No radio
-  control; `ReadRadioState` will be added with the automations in phase 3.
+- **Capabilities:** `ReadRadioState`, `NetworkAccess` and `PersistSettings`.
+  Radio state (frequency, mode, TX) is only read, to drive rules. There's no
+  `ControlRadio`: PowerStation never tunes, keys or touches PureSignal.
+- **TX:** only an on-air light may follow TX, and the UI warns not to rely on
+  it for safety. Every other rule waits until TX ends.
+- **Safety timers:** the Shelly's own flip-back timer (`toggle_after` on
+  Gen2+, `timer` on Gen1), renewed only right after a poll sees the output on,
+  so the device switches off by itself if Zeus stops.
 - **LAN only:** every device address must resolve to a private, link-local or
   loopback address, so the plugin's endpoints can't be used to reach the
   Internet. The HTTP client ignores system proxies and never follows
   redirects.
 - **Credentials:** Gen2 passwords are verified against the device's own
   digest challenge and stored only as HA1 = SHA256(admin:realm:password).
+  Gen1 uses HTTP Basic, which has no hashed form, so a Gen1 password is
+  stored as entered in the Zeus plugin settings; the UI says so.
 - **Change tag:** commands carry `tag: "zeus"` so changes made from Zeus are
   identifiable on the device. Firmware that rejects the parameter is detected
   and the tag is dropped for that device.
