@@ -3,7 +3,7 @@
 Control and monitor the Shelly relays, plugs, dimmers and energy meters in
 your shack from inside Zeus, and let Zeus switch them for you. By KQ4WLR.
 
-## What it does (version 0.5.0)
+## What it does (version 0.5.1)
 
 - **Turn outputs on and off** on Shelly Gen1, Gen2, Gen3, Gen4 and "Powered
   by Shelly" devices: Shelly 1 / 1PM / 2.5 (relay mode), Plug and Plug S,
@@ -51,6 +51,11 @@ had it docked; setup now lives behind the gear.
   stores a Gen1 password as you enter it, in Zeus's settings on this computer.
   Enter the user name too if you changed it from `admin`.
 
+Each device's settings (**Setup › Devices › Edit**) have one **Save
+changes** button for the name, address, output and meter names, safety
+timers and supply. The password has its own **Check and save password**,
+because it's checked with the device first.
+
 ## Rules (Setup › Automations)
 
 Each rule reads **When** something happens **then** do something:
@@ -93,9 +98,16 @@ Timers are only ever renewed on an output a poll has just seen on.
 
 ## Readings (Setup › Readings)
 
-- **Mains voltage**: 120 V (US/Canada service, ANSI C84.1: normal
-  114–126 V, limit 110–127 V), 230 V (normal ±6%, limit ±10%), or your own.
-  Mains is one supply, so a sag or surge is reported once for the station.
+- **Mains voltage**: 120 V (US/Canada 120/240 V split-phase service, ANSI
+  C84.1: normal 114–126 V, limit 110–127 V per leg), 230 V (normal ±6%,
+  limit ±10%), or your own. Shelly devices measure each leg to neutral, so a
+  US panel uses 120 V here even though there's 240 V between the legs; each
+  leg of a ShellyEM is checked as 120 V. The page shows what your devices
+  measure now, to help you pick. Mains is one supply, so a sag or surge is
+  reported once for the station.
+- **Loads wired across two legs** (a 240 V amplifier on a US panel): tick
+  **Wired across two legs** in that device's settings, and its voltage is
+  checked against twice the range.
 - **Current per output**: defaults from each device's rating where it's known
   (warn at 80%, limit at 100%). Set your own values to match a breaker, cord
   or load. **Low when on** warns if an output is on but the load draws almost

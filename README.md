@@ -19,6 +19,7 @@ and ships inside the package.
 | 2a+ | Cards snap to equal grid cells that fill the panel (from operator test) | **Done** (0.4.1) |
 | 2a+ | Chosen column count honoured down to narrow cards; visible note when the panel is too narrow | **Done** (0.4.2) |
 | 3 | Gear-cog setup; Gen1 (ShellyEM, Shelly 1, 1PM, 2.5, Plug/Plug S, Dimmer 1/2); rules on Zeus start/close, TX (on-air light), band, frequency, idle and time of day, with TX deferral and put-back-on-return; device-side safety timers; normal ranges for mains voltage and output current with an event log | **Done** (0.5.0) |
+| 3+ | One Save for device settings; 120 V split-phase wording, measured voltage shown, line-to-line option (from operator test) | **Done** (0.5.1) |
 | 4 | Rules on readings (low battery, AC out of range), polish, in-Zeus screenshots, catalog submission | Planned |
 
 ## Layout

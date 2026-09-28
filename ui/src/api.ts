@@ -87,6 +87,8 @@ export interface ReadingEvent {
 
 export interface ReadingsView {
   mains: MainsProfile;
+  /** Line-to-neutral voltage the devices measure right now. */
+  measured?: { minV: number; maxV: number } | null;
   /** Mains is one supply, so voltage is reported once for the station rather than per output. */
   mainsNow?: { voltageV: number; alert?: ReadingAlert | null; outputs: number } | null;
   /** A reading must stay out of range this long before it counts (ignores switch-on inrush). */
@@ -107,6 +109,8 @@ export interface DeviceView {
   hasCredential: boolean;
   previousHost?: string | null;
   hostChangedAt?: string | null;
+  /** Wired across two legs: voltage is checked against twice the mains range. */
+  lineToLine?: boolean;
   status: {
     health: DeviceHealth;
     message?: string | null;
@@ -348,6 +352,7 @@ export function createClient(api: ZeusPluginApi) {
         password?: string;
         /** Gen1 only: the user name set on the device (default admin). */
         username?: string;
+        lineToLine?: boolean;
         clearPassword?: boolean;
         channelNames?: Record<string, string | null>;
         safetyMinutes?: Record<string, number | null>;

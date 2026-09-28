@@ -144,3 +144,27 @@ public static class Gen1Tests
         Assert.Equal(null, ReadingsService.RatedAmps("PlugS", KQ4WLR.PowerStation.Model.ChannelKind.Switch), "unknown rating left blank");
     }
 }
+
+public static class Gen1NamingTests
+{
+    [Test]
+    public static async Task RenamesEmRelayAndMeters()
+    {
+        await using var em = await FakeShellyGen1.StartAsync("SHEM", f =>
+        {
+            f.Relays.Add(new FakeShellyGen1.Relay());
+            f.EMeters.Add(new FakeShellyGen1.EMeter());
+            f.EMeters.Add(new FakeShellyGen1.EMeter());
+        });
+        await using var host = await PluginHost.StartAsync();
+        var (_, device) = await host.SendAsync(HttpMethod.Post, "devices", new { host = em.Host });
+        var id = device!["deviceId"]!.GetValue<string>();
+        var (status, body) = await host.SendAsync(HttpMethod.Patch, $"devices/{id}", new
+        {
+            channelNames = new Dictionary<string, string> { ["switch:0"] = "Emergency Generator Shutdown", ["emeter:0"] = "L1 Leg", ["emeter:1"] = "L2 Leg" },
+        });
+        Assert.Equal(System.Net.HttpStatusCode.OK, status, $"rename: {body}");
+        var names = body!["status"]!["channels"]!.AsArray().Select(c => c!["name"]?.GetValue<string>()).ToArray();
+        Assert.Equal("Emergency Generator Shutdown|L1 Leg|L2 Leg", string.Join("|", names), "names");
+    }
+}

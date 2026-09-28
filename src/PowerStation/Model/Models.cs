@@ -55,6 +55,12 @@ public sealed record DeviceRecord
     /// <summary>Device-side safety timer per channel key, in minutes.</summary>
     public Dictionary<string, int> SafetyMinutes { get; init; } = new();
 
+    /// <summary>
+    /// Wired across two legs (e.g. 240 V between L1 and L2 on a US split-phase
+    /// panel), so it measures twice the line-to-neutral mains voltage.
+    /// </summary>
+    public bool LineToLine { get; init; }
+
     /// <summary>Operator's current limits per channel key, replacing the model rating defaults.</summary>
     public Dictionary<string, LimitOverride> Limits { get; init; } = new();
 

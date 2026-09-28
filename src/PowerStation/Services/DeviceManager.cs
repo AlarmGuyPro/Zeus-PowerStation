@@ -16,7 +16,8 @@ public sealed record UpdateDeviceRequest(
     Dictionary<string, string?>? ChannelNames,
     Dictionary<string, int?>? SafetyMinutes = null,
     Dictionary<string, LimitOverride?>? Limits = null,
-    string? Username = null);
+    string? Username = null,
+    bool? LineToLine = null);
 
 public sealed record ChannelCommand(
     string? Action,
@@ -39,6 +40,7 @@ public sealed record DeviceView
     public bool HasCredential { get; init; }
     public string? PreviousHost { get; init; }
     public DateTimeOffset? HostChangedAt { get; init; }
+    public bool LineToLine { get; init; }
     public required DeviceStatus Status { get; init; }
 }
 
@@ -366,6 +368,7 @@ public sealed class DeviceManager : IAsyncDisposable
         HasCredential = e.Record.Ha1 is not null || e.Record.Gen1Password is not null,
         PreviousHost = e.Record.PreviousHost,
         HostChangedAt = e.Record.HostChangedAt,
+        LineToLine = e.Record.LineToLine,
         Status = Decorate is { } decorate ? e.Status with { Channels = decorate(e.Record, e.Status.Channels) } : e.Status,
     };
 
@@ -501,6 +504,7 @@ public sealed class DeviceManager : IAsyncDisposable
             }
             updated = updated with { SafetyMinutes = safety };
         }
+        if (request.LineToLine is { } ll) updated = updated with { LineToLine = ll };
         if (request.Limits is not null)
         {
             var limits = new Dictionary<string, LimitOverride>(updated.Limits, StringComparer.Ordinal);

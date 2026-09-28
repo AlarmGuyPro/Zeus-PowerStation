@@ -4,6 +4,7 @@ import { ApiError, type ChannelState, type DeviceView, type PowerStationClient }
 import { BackendError, HealthLabel, Loading, Notice, channelLabel, fmt, type StatusState } from "./shared";
 import { DeviceGrid, useLayout } from "./layout";
 import { ScenesStrip } from "./scenes";
+import { mismatch } from "./readings";
 import { c } from "./styles";
 
 const ALERT_TEXT: Record<string, string> = {
@@ -83,7 +84,8 @@ export function StatusView({
 }
 
 function MainsBanner({ status }: { status: StatusState }) {
-  const now = status.data?.readings?.mainsNow;
+  const readings = status.data?.readings;
+  const now = readings?.mainsNow;
   const a = now?.alert;
   if (!now || !a) return null;
   const low = a.kind === "voltageLow";
@@ -94,6 +96,8 @@ function MainsBanner({ status }: { status: StatusState }) {
         {a.level === "limit" ? (low ? "below the limit" : "above the limit") : low ? "below normal" : "above normal"} of{" "}
         {fmt.volts(a.threshold)} since {new Date(a.since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}, seen on{" "}
         {now.outputs} output{now.outputs === 1 ? "" : "s"}.
+        {readings?.measured && mismatch(readings.measured, readings.mains) &&
+          " That's far from the mains setting: check the voltage choice in setup (Readings)."}
       </span>
     </div>
   );

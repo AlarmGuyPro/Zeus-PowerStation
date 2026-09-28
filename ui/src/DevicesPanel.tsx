@@ -292,6 +292,9 @@ function DeviceSettings({
   const [safety, setSafety] = useState<Record<string, string>>({});
   const dirtySafety = Object.keys(safety).length > 0;
   const switchable = channels.filter((ch) => ch.kind !== "Meter");
+  const [lineToLine, setLineToLine] = useState(!!device.lineToLine);
+  const dirty =
+    name !== (device.name ?? "") || host !== device.host || dirtyNames || dirtySafety || lineToLine !== !!device.lineToLine;
 
   return (
     <article className={c("device")} aria-labelledby={`${ids}-n`}>
@@ -343,9 +346,6 @@ function DeviceSettings({
           {device.status.health !== "Online" && device.status.message && (
             <Notice tone="warn">{device.status.message}</Notice>
           )}
-          {error && <Notice tone="error">{error}</Notice>}
-          {saved && <Notice tone="ok">{saved}</Notice>}
-
           <div className={c("fields")}>
             <div className={c("field")}>
               <label htmlFor={`${ids}-name`}>Name</label>
@@ -355,34 +355,6 @@ function DeviceSettings({
               <label htmlFor={`${ids}-host`}>Address</label>
               <input id={`${ids}-host`} value={host} spellCheck={false} onChange={(e) => setHost(e.currentTarget.value)} />
             </div>
-          </div>
-          <div className={c("row")} style={{ marginTop: 8 }}>
-            <button
-              type="button"
-              className={c("button", "button--primary")}
-              disabled={busy !== null || (name === (device.name ?? "") && host === device.host)}
-              onClick={() =>
-                run(
-                  "save",
-                  () =>
-                    client.updateDevice(device.deviceId, {
-                      name: name === (device.name ?? "") ? undefined : name,
-                      host: host === device.host ? undefined : host,
-                    }),
-                  "Saved.",
-                )
-              }
-            >
-              {busy === "save" ? "Saving…" : "Save"}
-            </button>
-            <button
-              type="button"
-              className={c("button")}
-              disabled={busy !== null}
-              onClick={() => run("refresh", () => client.refresh(device.deviceId))}
-            >
-              {busy === "refresh" ? "Checking…" : "Check now"}
-            </button>
           </div>
 
           {channels.length > 0 && (
@@ -406,30 +378,6 @@ function DeviceSettings({
                     />
                   </div>
                 ))}
-              </div>
-              <div className={c("row")} style={{ marginTop: 8 }}>
-                <button
-                  type="button"
-                  className={c("button")}
-                  disabled={!dirtyNames || busy !== null}
-                  onClick={() =>
-                    run(
-                      "names",
-                      async () => {
-                        const result = await client.updateDevice(device.deviceId, {
-                          channelNames: Object.fromEntries(
-                            Object.entries(channelNames).map(([k, v]) => [k, v.trim() || null]),
-                          ),
-                        });
-                        setChannelNames({});
-                        return result;
-                      },
-                      "Output names saved.",
-                    )
-                  }
-                >
-                  {busy === "names" ? "Saving…" : "Save output names"}
-                </button>
               </div>
             </>
           )}
@@ -460,32 +408,67 @@ function DeviceSettings({
                   </div>
                 ))}
               </div>
-              <div className={c("row")} style={{ marginTop: 8 }}>
-                <button
-                  type="button"
-                  className={c("button")}
-                  disabled={!dirtySafety || busy !== null}
-                  onClick={() =>
-                    run(
-                      "safety",
-                      async () => {
-                        const result = await client.updateDevice(device.deviceId, {
-                          safetyMinutes: Object.fromEntries(
-                            Object.entries(safety).map(([k, v]) => [k, v.trim() === "" ? null : Number(v)]),
-                          ),
-                        });
-                        setSafety({});
-                        return result;
-                      },
-                      "Safety timers saved.",
-                    )
-                  }
-                >
-                  {busy === "safety" ? "Saving…" : "Save safety timers"}
-                </button>
-              </div>
             </>
           )}
+
+          {channels.some((ch) => ch.voltageV != null) && (
+            <>
+              <h4 className={c("section-title")}>Supply</h4>
+              <label className={c("check")}>
+                <input type="checkbox" checked={lineToLine} onChange={(e) => setLineToLine(e.currentTarget.checked)} />
+                <span>
+                  Wired across two legs (line to line)
+                  <span className={c("hint")} style={{ display: "block" }}>
+                    For a 240 V load on a US 120/240 V panel, or 400 V across two phases. Its voltage is checked against
+                    twice the mains range. Leave this off for normal outlets and for each leg of a ShellyEM.
+                  </span>
+                </span>
+              </label>
+            </>
+          )}
+
+          <div className={c("save-bar")}>
+            <button
+              type="button"
+              className={c("button", "button--primary")}
+              disabled={busy !== null || !dirty}
+              onClick={() =>
+                run(
+                  "save",
+                  async () => {
+                    const result = await client.updateDevice(device.deviceId, {
+                      name: name === (device.name ?? "") ? undefined : name,
+                      host: host === device.host ? undefined : host,
+                      channelNames: dirtyNames
+                        ? Object.fromEntries(Object.entries(channelNames).map(([k, v]) => [k, v.trim() || null]))
+                        : undefined,
+                      safetyMinutes: dirtySafety
+                        ? Object.fromEntries(Object.entries(safety).map(([k, v]) => [k, v.trim() === "" ? null : Number(v)]))
+                        : undefined,
+                      lineToLine: lineToLine !== device.lineToLine ? lineToLine : undefined,
+                    });
+                    setChannelNames({});
+                    setSafety({});
+                    return result;
+                  },
+                  "Saved.",
+                )
+              }
+            >
+              {busy === "save" ? "Saving…" : "Save changes"}
+            </button>
+            <button
+              type="button"
+              className={c("button")}
+              disabled={busy !== null}
+              onClick={() => run("refresh", () => client.refresh(device.deviceId))}
+            >
+              {busy === "refresh" ? "Checking…" : "Check now"}
+            </button>
+            {dirty && busy === null && <span className={c("hint")}>Unsaved changes</span>}
+          </div>
+          {error && <Notice tone="error">{error}</Notice>}
+          {saved && <Notice tone="ok">{saved}</Notice>}
 
           <h4 className={c("section-title")}>Password</h4>
           <div className={c("fields")}>
@@ -532,7 +515,7 @@ function DeviceSettings({
                 )
               }
             >
-              {busy === "password" ? "Checking…" : "Save password"}
+              {busy === "password" ? "Checking…" : "Check and save password"}
             </button>
             {device.hasCredential && (
               <button

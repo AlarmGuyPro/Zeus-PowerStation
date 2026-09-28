@@ -318,6 +318,7 @@ function measure(devices: DeviceView[]) {
     }
   }
   rd.view.mainsNow = { voltageV: rd.mainsV, alert: mainsAlert, outputs: mainsCount };
+  rd.view.measured = { minV: +(rd.mainsV - 0.5).toFixed(1), maxV: rd.mainsV };
   for (const key of [...rd.firstSeen.keys()]) if (!seen.has(key)) {
     rd.firstSeen.delete(key);
     const ev = rd.open.get(key);
@@ -660,6 +661,7 @@ const api: ZeusPluginApi = {
         d.hasCredential = true; d.authRequired = true;
         if (d.status.health === "Unauthorized") d.status = { health: "Online", channels: [sw(0, "Soldering station", false, 48)] };
       }
+      if (typeof body.lineToLine === "boolean") d.lineToLine = body.lineToLine;
       if (body.limits) for (const [k, v] of Object.entries(body.limits)) {
         const key = `${d.deviceId}|${k}`;
         if (v === null) { rd.custom.delete(key); continue; }

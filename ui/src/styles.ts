@@ -272,6 +272,7 @@ ${e("pill-text")} strong { font-family: var(--font-mono); font-weight: 500; colo
 ${e("reading--warn")} { color: var(--amber); font-weight: 500; }
 ${e("reading--limit")} { color: var(--tx); font-weight: 500; }
 ${e("summary-warn")} { color: var(--amber); }
+${e("save-bar")} { position: sticky; bottom: -10px; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 12px -8px 8px; padding: 8px; background: var(--bg-2); border-top: 1px solid var(--line); }
 ${e("mains-banner")} { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; padding: 8px 10px; margin: 0 0 10px; border: 1px solid var(--amber); border-left-width: 3px; border-radius: var(--r-md); background: color-mix(in srgb, var(--amber) 10%, var(--bg-2)); color: var(--fg-1); }
 ${e("mains-banner")} strong { font-weight: 500; color: var(--amber); font-family: var(--font-mono); }
 ${e("mains-banner--limit")} { border-color: var(--tx); background: color-mix(in srgb, var(--tx) 10%, var(--bg-2)); }

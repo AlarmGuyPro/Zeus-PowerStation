@@ -140,6 +140,34 @@ public static class ReadingsTests
     }
 
     [Test]
+    public static void SplitPhaseLegsAndLineToLineDevicesUseTheRightRange()
+    {
+        var time = new ManualTime(DateTimeOffset.UnixEpoch);
+        var r = new ReadingsService(new MemorySettings(), time);
+        var em = Record("em", "ShellyEM");
+        var amp240 = Record("amp") with { LineToLine = true };
+        void Both(double leg, double ll)
+        {
+            r.Observe(em, [Ch("switch:0", leg, 1)]);
+            r.Observe(amp240, [Ch("switch:0", ll, 5)]);
+        }
+        Both(121.4, 242.6);
+        time.Advance(TimeSpan.FromSeconds(6));
+        Both(121.4, 242.6);
+        Assert.Equal(0, r.Decorate(em, [Ch("switch:0", 121.4, 1)])[0].Alerts.Count, "a 120 V leg is normal on the 120 V setting");
+        Assert.Equal(0, r.Decorate(amp240, [Ch("switch:0", 242.6, 5)])[0].Alerts.Count, "240 V across two legs is normal");
+        Assert.Equal(121.3, View(r)["measured"]!["minV"]!.GetValue<double>(), "measured shown per leg");
+
+        Both(121.4, 216.0);
+        time.Advance(TimeSpan.FromSeconds(6));
+        Both(121.4, 216.0);
+        var alert = r.Decorate(amp240, [Ch("switch:0", 216.0, 5)])[0].Alerts.Single();
+        Assert.Equal("limit", alert.Level, "216 V is below 2 × 110 V");
+        Assert.Equal(220.0, alert.Threshold, "threshold doubled");
+        Assert.Equal("Mains (line to line)", View(r)["events"]![0]!["label"]!.GetValue<string>(), "labelled");
+    }
+
+    [Test]
     public static void DeviceErrorsAreLoggedOnce()
     {
         var r = new ReadingsService(new MemorySettings(), new ManualTime(DateTimeOffset.UnixEpoch));

@@ -70,9 +70,6 @@ export function ReadingsSettings({ client, status }: { client: PowerStationClien
         Readings outside the normal range show in amber; outside the limit, in red. Mains voltage is one supply, so it's
         reported once for the station; current is checked per output. Every excursion is logged below. These are warnings only: the Shelly's own overpower and overvoltage protection still does the switching.
       </p>
-      {error && <Notice tone="error">{error}</Notice>}
-      {saved && <Notice tone="ok">{saved}</Notice>}
-
       <h4 className={c("section-title")}>Mains voltage</h4>
       <div className={c("row")} style={{ marginBottom: 8 }}>
         <div className={c("seg")} role="radiogroup" aria-label="Mains supply">
@@ -85,18 +82,28 @@ export function ReadingsSettings({ client, status }: { client: PowerStationClien
               className={c("seg-btn")}
               onClick={() => setMains(p === "custom" ? { ...mains, preset: "custom" } : MAINS_PRESETS[p])}
             >
-              {p === "custom" ? "Custom" : `${p} V`}
+              {p === "custom" ? "Custom" : p === "120" ? "120 V (US split phase)" : "230 V"}
             </button>
           ))}
         </div>
-        <span className={c("hint")}>
-          {mains.preset === "120"
-            ? "US/Canada service (ANSI C84.1): normal 114–126 V, limit 110–127 V."
-            : mains.preset === "230"
-              ? "230 V service (EN 50160): normal ±6%, limit ±10%."
-              : "Your own values."}
-        </span>
       </div>
+      <p className={c("hint")} style={{ margin: "0 0 6px" }}>
+        {mains.preset === "120"
+          ? "US/Canada 120/240 V split-phase service (ANSI C84.1): normal 114–126 V, limit 110–127 V per leg."
+          : mains.preset === "230"
+            ? "230 V service, as in Europe and the UK (EN 50160): normal ±6%, limit ±10%."
+            : "Your own values."}{" "}
+        Shelly devices measure each leg to neutral, so a US panel with 240 V between the legs still uses 120 V here. For a
+        load wired across both legs, tick "Wired across two legs" in that device's settings.
+      </p>
+      {view.measured && (
+        <p className={c("radio-line")}>
+          Your devices measure {view.measured.minV === view.measured.maxV ? `${view.measured.minV} V` : `${view.measured.minV}–${view.measured.maxV} V`} now
+          {mismatch(view.measured, mains) && (
+            <span className={c("summary-warn")}> · that doesn't look like {mains.preset === "custom" ? "this range" : `${mains.preset} V`}</span>
+          )}
+        </p>
+      )}
       <div className={c("range")} aria-hidden="true">
         <RangeBar mains={mains} />
       </div>
@@ -115,16 +122,6 @@ export function ReadingsSettings({ client, status }: { client: PowerStationClien
           onChange={setHold}
           hint="A reading has to stay out of range this long to count, so switch-on inrush and brief dips are ignored."
         />
-      </div>
-      <div className={c("row")} style={{ marginTop: 8 }}>
-        <button
-          type="button"
-          className={c("button", "button--primary")}
-          disabled={!dirtyMains || busy !== null}
-          onClick={() => act("mains", () => client.saveReadings({ mains, holdSeconds: hold ?? 0 }), "Voltage range saved.")}
-        >
-          {busy === "mains" ? "Saving…" : "Save voltage range"}
-        </button>
       </div>
 
       <h4 className={c("section-title")}>Current per output</h4>
@@ -184,15 +181,16 @@ export function ReadingsSettings({ client, status }: { client: PowerStationClien
           );
         })}
       </div>
-      <div className={c("row")} style={{ marginTop: 8 }}>
+      <div className={c("save-bar")}>
         <button
           type="button"
-          className={c("button")}
-          disabled={!dirtyLimits || busy !== null}
+          className={c("button", "button--primary")}
+          disabled={(!dirtyLimits && !dirtyMains) || busy !== null}
           onClick={() =>
             act(
-              "limits",
+              "save",
               async () => {
+                if (dirtyMains) await client.saveReadings({ mains, holdSeconds: hold ?? 0 });
                 // Send each changed row whole; a row left empty goes back to the device rating.
                 const byDevice = new Map<string, Record<string, (typeof limits)[string] | null>>();
                 for (const [k, draft] of Object.entries(limits)) {
@@ -206,18 +204,28 @@ export function ReadingsSettings({ client, status }: { client: PowerStationClien
                 for (const [id, map] of byDevice) status.applyDevice(await client.updateDevice(id, { limits: map }));
                 setLimits({});
               },
-              "Current limits saved.",
+              "Saved.",
             )
           }
         >
-          {busy === "limits" ? "Saving…" : "Save current limits"}
+          {busy === "save" ? "Saving…" : "Save changes"}
         </button>
-        {dirtyLimits && (
-          <button type="button" className={c("button")} onClick={() => setLimits({})}>
+        {(dirtyLimits || dirtyMains) && (
+          <button
+            type="button"
+            className={c("button")}
+            onClick={() => {
+              setLimits({});
+              setMains(view.mains);
+              setHold(view.holdSeconds);
+            }}
+          >
             Undo changes
           </button>
         )}
+        {saved && <span className={c("hint")} role="status">{saved}</span>}
       </div>
+      {error && <Notice tone="error">{error}</Notice>}
 
       <div className={c("toolbar")} style={{ marginTop: 14 }}>
         <h4 className={c("section-title")} style={{ margin: 0 }}>
@@ -259,6 +267,12 @@ function EventRow({ ev }: { ev: ReadingEvent }) {
       <span className={c("event-dur")}>{ev.kind === "device" ? "" : ongoing ? <span className={c("badge", ev.level === "limit" && "badge--danger")}>Now · {dur}</span> : dur}</span>
     </li>
   );
+}
+
+/** True when what the devices read is nowhere near the chosen range (e.g. 230 V chosen on a 120 V system). */
+export function mismatch(measured: { minV: number; maxV: number }, m: MainsProfile) {
+  const span = m.limitHighV - m.limitLowV;
+  return measured.maxV < m.limitLowV - span || measured.minV > m.limitHighV + span;
 }
 
 /** A small scale showing limit / normal bands for the chosen profile. */

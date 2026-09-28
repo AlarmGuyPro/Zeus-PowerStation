@@ -83,8 +83,12 @@ public sealed class ReadingsService
         public string DeviceId = "";
         public string ChannelKey = "";
         public string Kind = "";
+        public double Factor = 1;
         public ReadingEvent? Event;
     }
+
+    /// <summary>Latest line-to-neutral voltage per channel, to show what the devices measure.</summary>
+    private readonly Dictionary<string, (double Volts, DateTimeOffset At)> _latestVolts = new(StringComparer.Ordinal);
 
     public ReadingsService(IPluginSettings settings, TimeProvider? time = null, Func<TimeSpan>? staleAfter = null)
     {
@@ -155,6 +159,8 @@ public sealed class ReadingsService
         lock (_lock)
         {
             var mains = _config.Mains;
+            // A device wired across two legs (240 V on a US split-phase panel) sees twice the mains voltage.
+            double f = record.LineToLine ? 2 : 1;
             foreach (var ch in channels)
             {
                 changed |= NoteDeviceErrors(record, ch, now);
@@ -163,15 +169,16 @@ public sealed class ReadingsService
 
                 if (ch.VoltageV is { } v and > 1)
                 {
-                    if (v < mains.LimitLowV) See($"{record.DeviceId}|{ch.Key}|voltageLow", "voltageLow", "limit", v, mains.LimitLowV);
-                    else if (v < mains.NormalLowV) See($"{record.DeviceId}|{ch.Key}|voltageLow", "voltageLow", "warn", v, mains.NormalLowV);
-                    if (v > mains.LimitHighV) See($"{record.DeviceId}|{ch.Key}|voltageHigh", "voltageHigh", "limit", v, mains.LimitHighV);
-                    else if (v > mains.NormalHighV) See($"{record.DeviceId}|{ch.Key}|voltageHigh", "voltageHigh", "warn", v, mains.NormalHighV);
+                    _latestVolts[$"{record.DeviceId}|{ch.Key}"] = (v / f, now);
+                    if (v < mains.LimitLowV * f) See($"{record.DeviceId}|{ch.Key}|voltageLow", "voltageLow", "limit", v, mains.LimitLowV * f);
+                    else if (v < mains.NormalLowV * f) See($"{record.DeviceId}|{ch.Key}|voltageLow", "voltageLow", "warn", v, mains.NormalLowV * f);
+                    if (v > mains.LimitHighV * f) See($"{record.DeviceId}|{ch.Key}|voltageHigh", "voltageHigh", "limit", v, mains.LimitHighV * f);
+                    else if (v > mains.NormalHighV * f) See($"{record.DeviceId}|{ch.Key}|voltageHigh", "voltageHigh", "warn", v, mains.NormalHighV * f);
                 }
 
                 var limits = LimitsFor(record, ch);
                 // Plugs without a voltage reading: estimate current from power at the nominal voltage.
-                var amps = ch.CurrentA ?? (ch.PowerW is { } p ? Math.Round(p / mains.NominalV, 2) : null);
+                var amps = ch.CurrentA ?? (ch.PowerW is { } p ? Math.Round(p / (mains.NominalV * f), 2) : null);
                 if (limits is not null && amps is { } a)
                 {
                     if (limits.MaxA is { } max && a > max) See($"{record.DeviceId}|{ch.Key}|currentHigh", "currentHigh", "limit", a, max);
@@ -185,6 +192,7 @@ public sealed class ReadingsService
                     if (!_watch.TryGetValue(key, out var w))
                         _watch[key] = w = new Watch { First = now, Worst = value, DeviceId = record.DeviceId, ChannelKey = ch.Key, Kind = kind, Label = label };
                     w.Last = now;
+                    w.Factor = f;
                     seen.Add(key);
                     w.Value = value;
                     w.Threshold = threshold;
@@ -244,11 +252,12 @@ public sealed class ReadingsService
             if (volt)
             {
                 // One mains event per kind, shared by every output that sees it.
-                var mainsKey = $"mains|{w.Kind}";
+                var ll = w.Factor > 1;
+                var mainsKey = $"{(ll ? "mains-ll" : "mains")}|{w.Kind}";
                 var open = _events.FirstOrDefault(e => e.End is null && e.Id.StartsWith(mainsKey + "|", StringComparison.Ordinal));
                 if (open is null)
                 {
-                    open = new ReadingEvent { Id = $"{mainsKey}|{w.First.ToUnixTimeMilliseconds()}", Label = "Mains", Kind = w.Kind, Start = w.First, Peak = w.Worst };
+                    open = new ReadingEvent { Id = $"{mainsKey}|{w.First.ToUnixTimeMilliseconds()}", Label = ll ? "Mains (line to line)" : "Mains", Kind = w.Kind, Start = w.First, Peak = w.Worst };
                     AddEvent(open);
                     changed = true;
                 }
@@ -265,18 +274,18 @@ public sealed class ReadingsService
             e.Peak = e.Peak is { } p ? (low ? Math.Min(p, w.Worst) : Math.Max(p, w.Worst)) : w.Worst;
             if (w.Level == "limit") e.Level = "limit";
             e.Threshold = w.Threshold;
-            e.Text = Describe(w.Kind, e.Level, e.Peak.Value);
+            e.Text = Describe(w.Kind, e.Level, e.Peak.Value, w.Factor);
         }
         return changed;
     }
 
-    private string Describe(string kind, string level, double peak)
+    private string Describe(string kind, string level, double peak, double f = 1)
     {
         var m = _config.Mains;
         return kind switch
         {
-            "voltageLow" => $"low voltage, lowest {peak:0.0} V ({(level == "limit" ? $"below the {m.LimitLowV:0.#} V limit" : $"normal from {m.NormalLowV:0.#} V")})",
-            "voltageHigh" => $"high voltage, highest {peak:0.0} V ({(level == "limit" ? $"above the {m.LimitHighV:0.#} V limit" : $"normal to {m.NormalHighV:0.#} V")})",
+            "voltageLow" => $"low voltage, lowest {peak:0.0} V ({(level == "limit" ? $"below the {m.LimitLowV * f:0.#} V limit" : $"normal from {m.NormalLowV * f:0.#} V")})",
+            "voltageHigh" => $"high voltage, highest {peak:0.0} V ({(level == "limit" ? $"above the {m.LimitHighV * f:0.#} V limit" : $"normal to {m.NormalHighV * f:0.#} V")})",
             "currentHigh" => $"high current, peak {peak:0.00} A",
             _ => $"low current while on, lowest {peak:0.00} A",
         };
@@ -341,10 +350,13 @@ public sealed class ReadingsService
                 .Where(w => w.Kind.StartsWith("voltage", StringComparison.Ordinal) && now - w.First >= hold && now - w.Last <= _staleAfter())
                 .ToArray();
             var worst = volts.OrderByDescending(w => w.Level == "limit").ThenByDescending(w => Math.Abs(w.Value - w.Threshold)).FirstOrDefault();
+            var fresh = _latestVolts.Values.Where(x => now - x.At <= _staleAfter()).Select(x => x.Volts).ToArray();
             return new
             {
                 mains = _config.Mains,
                 holdSeconds = _config.HoldSeconds,
+                // What the devices measure now (line to neutral), to help pick the right mains setting.
+                measured = fresh.Length == 0 ? null : new { minV = Math.Round(fresh.Min(), 1), maxV = Math.Round(fresh.Max(), 1) },
                 mainsNow = worst is null ? null : new
                 {
                     voltageV = worst.Value,
