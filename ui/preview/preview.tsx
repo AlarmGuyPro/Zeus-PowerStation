@@ -77,5 +77,5 @@ const api: ZeusPluginApi = {
 
 const client = createClient(api);
 createRoot(document.getElementById("root")!).render(
-  <PowerStationPanel client={client} initialTab={panel === "devices" ? "setup" : "status"} />,
+  <PowerStationPanel client={client} initialSetup={panel === "devices"} />,
 );

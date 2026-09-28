@@ -8,7 +8,8 @@ export interface ZeusPluginApi {
   callBackend(method: string, path: string, body?: unknown): Promise<Response>;
 }
 
-export type ChannelKind = "Switch" | "Light";
+/** Meter = a read-only energy-meter channel (ShellyEM / EM clamps); it can't be switched. */
+export type ChannelKind = "Switch" | "Light" | "Meter";
 export type DeviceHealth = "Pending" | "Online" | "Unreachable" | "Unauthorized" | "Error";
 
 export interface ChannelState {
@@ -28,6 +29,10 @@ export interface ChannelState {
   errors: string[];
   flags: string[];
   metered: boolean;
+  /** Device-side safety timer on this output, in minutes (null = none). */
+  safetyMinutes?: number | null;
+  /** When the safety timer would turn the output off if Zeus stopped renewing it. */
+  safetyEndsAt?: string | null;
 }
 
 export interface DeviceView {
@@ -64,6 +69,8 @@ export interface Scene {
   id: string;
   name: string;
   fadeSeconds?: number | null;
+  /** Safety timer (minutes) put on every output this scene turns on. */
+  safetyMinutes?: number | null;
   targets: SceneTarget[];
 }
 
@@ -88,6 +95,67 @@ export interface StatusResponse {
   devices: DeviceView[];
   scenes: Scene[];
   layout?: Layout | null;
+  rules?: Rule[];
+  automation?: AutomationState | null;
+}
+
+// ---------------------------------------------------------------- automations
+
+export const BANDS = ["160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m", "4m", "2m"] as const;
+
+export type Trigger =
+  | { type: "zeusStart" }
+  | { type: "zeusStop" }
+  /** On-air light only: never a safety interlock. */
+  | { type: "tx" }
+  | { type: "band"; bands: string[] }
+  | { type: "frequency"; fromMHz: number; toMHz: number }
+  | { type: "idle"; minutes: number; warnMinutes: number; extendMinutes: number }
+  /** At a time of day, act only if the station has been idle; otherwise check again later. */
+  | { type: "time"; at: string; idleMinutes: number; extendMinutes: number };
+
+export type TriggerType = Trigger["type"];
+
+export type Action =
+  | { type: "scene"; sceneId: string; mode: "apply" | "off" }
+  | { type: "output"; deviceId: string; kind: ChannelKind; index: number; on: boolean; brightness?: number | null; rampSeconds?: number | null };
+
+/** What happens when a lasting condition (TX, band, range, idle) ends. */
+export type EndAction = { type: "restore" } | { type: "none" } | { type: "off" } | Action;
+
+export interface Rule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  trigger: Trigger;
+  action: Action;
+  endAction?: EndAction | null;
+  /** Condition must hold this long before the rule counts it (ignores blips). */
+  debounceSeconds?: number | null;
+  /** Wait this long after the trigger before acting. */
+  delaySeconds?: number | null;
+  /** Wait this long after the condition ends before running the end action. */
+  endDelaySeconds?: number | null;
+  lastRun?: { at: string; ok: boolean; text: string } | null;
+}
+
+export type RuleBody = Omit<Rule, "id" | "lastRun">;
+
+export interface AutomationState {
+  paused: boolean;
+  radio: { connected: boolean; frequencyHz?: number | null; band?: string | null; mode?: string | null; mox: boolean };
+  idle: {
+    /** active: someone is operating; warning: countdown shown; idle: the idle rule has run. */
+    state: "active" | "warning" | "idle" | "off";
+    ruleId?: string | null;
+    lastActivity?: string | null;
+    /** When the idle rule will run (active or warning state). */
+    firesAt?: string | null;
+    extendMinutes?: number | null;
+  };
+  /** Pending delayed actions, including actions deferred until TX ends. */
+  pending: { ruleId: string; text: string; at?: string | null; waitingForTx?: boolean }[];
+  log: { at: string; text: string; ok: boolean }[];
 }
 
 export interface FoundDevice {
@@ -178,7 +246,12 @@ export function createClient(api: ZeusPluginApi) {
 
   const id = (deviceId: string) => encodeURIComponent(deviceId);
 
-  const sceneBody = (s: Omit<Scene, "id">) => ({ name: s.name, fadeSeconds: s.fadeSeconds ?? null, targets: s.targets });
+  const sceneBody = (s: Omit<Scene, "id">) => ({
+    name: s.name,
+    fadeSeconds: s.fadeSeconds ?? null,
+    safetyMinutes: s.safetyMinutes ?? null,
+    targets: s.targets,
+  });
 
   return {
     saveLayout: (layout: Layout) => call<Layout>("PUT", "/layout", layout),
@@ -192,6 +265,15 @@ export function createClient(api: ZeusPluginApi) {
     deleteScene: (id: string) => call<{ removed: string }>("DELETE", `/scenes/${encodeURIComponent(id)}`),
     runScene: (id: string, mode: "apply" | "off") =>
       call<SceneRunResult>("POST", `/scenes/${encodeURIComponent(id)}/run`, { mode }),
+    createRule: (r: RuleBody) => call<Rule>("POST", "/rules", r),
+    updateRule: (id: string, r: RuleBody) => call<Rule>("PUT", `/rules/${encodeURIComponent(id)}`, r),
+    deleteRule: (id: string) => call<{ removed: string }>("DELETE", `/rules/${encodeURIComponent(id)}`),
+    testRule: (id: string) => call<AutomationState>("POST", `/rules/${encodeURIComponent(id)}/test`),
+    setAutomation: (patch: { paused?: boolean }) => call<AutomationState>("PUT", "/automation", patch),
+    /** "I'm here": counts as activity and resets the idle countdown. */
+    imHere: () => call<AutomationState>("POST", "/automation/activity"),
+    /** Push the idle timeout out by the idle rule's extend step. */
+    extendIdle: () => call<AutomationState>("POST", "/automation/extend"),
     status: () => call<StatusResponse>("GET", "/status"),
     probe: (host: string) => call<ProbeResponse>("POST", "/devices/probe", { host }),
     addDevice: (host: string, name?: string, password?: string) =>
@@ -204,6 +286,7 @@ export function createClient(api: ZeusPluginApi) {
         password?: string;
         clearPassword?: boolean;
         channelNames?: Record<string, string | null>;
+        safetyMinutes?: Record<string, number | null>;
       },
     ) => call<DeviceView>("PATCH", `/devices/${id(deviceId)}`, patch),
     removeDevice: (deviceId: string) => call<{ removed: string }>("DELETE", `/devices/${id(deviceId)}`),

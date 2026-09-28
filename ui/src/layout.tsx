@@ -88,49 +88,6 @@ function useWidth() {
   return { ref, width };
 }
 
-export function LayoutToolbar({
-  layout,
-  arranging,
-  onColumns,
-  onArrange,
-}: {
-  layout: Layout;
-  arranging: boolean;
-  onColumns: (n: number) => void;
-  onArrange: (on: boolean) => void;
-}) {
-  return (
-    <div className={c("toolbar")}>
-      <div className={c("seg")} role="radiogroup" aria-label="Columns">
-        <span className={c("seg-label")} aria-hidden="true">
-          Columns
-        </span>
-        {COLUMN_CHOICES.map((n) => (
-          <button
-            key={n}
-            type="button"
-            role="radio"
-            aria-checked={layout.columns === n}
-            className={c("seg-btn")}
-            onClick={() => onColumns(n)}
-            title={n === 0 ? "Fit as many as the panel allows" : `${n} column${n === 1 ? "" : "s"}`}
-          >
-            {n === 0 ? "Auto" : n}
-          </button>
-        ))}
-      </div>
-      <button
-        type="button"
-        className={c("button", "button--small", arranging && "button--primary")}
-        aria-pressed={arranging}
-        onClick={() => onArrange(!arranging)}
-      >
-        {arranging ? "Done arranging" : "Arrange"}
-      </button>
-    </div>
-  );
-}
-
 type Move = "up" | "down" | "left" | "right";
 
 /**

@@ -3,8 +3,13 @@
 // against an in-memory pretend backend with example devices.
 import { useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { createClient, type ChannelState, type DeviceView, type DiscoveryView, type Layout, type Scene, type SceneTarget, type ZeusPluginApi } from "../src/api";
+import { useEffect } from "react";
+import {
+  BANDS, createClient, type Action, type AutomationState, type ChannelState, type DeviceView, type DiscoveryView,
+  type EndAction, type Layout, type Rule, type Scene, type SceneTarget, type ZeusPluginApi,
+} from "../src/api";
 import { PowerStationPanel } from "../src/PowerStationPanel";
+import { IdlePillPanel } from "../src/automations";
 
 type Scenario = "normal" | "empty" | "down";
 
@@ -21,7 +26,7 @@ function exampleDevices(): DeviceView[] {
       deviceId: "shellypro4pm-f008d1d8b8b8", displayName: "Shack Rack", name: "Shack Rack", host: "10.0.20.14",
       generation: 2, model: "SPSW-104PE16EU", app: "Pro4PM", mac: "F008D1D8B8B8", authRequired: true, hasCredential: true,
       status: { health: "Online", channels: [
-        sw(0, "Amplifier", true, 312.6), sw(1, "Station PSU", true, 58.2), sw(2, "Monitors", false, 44),
+        sw(0, "Amplifier", true, 312.6, { safetyMinutes: 10 }), sw(1, "Station PSU", true, 58.2, { safetyMinutes: 30 }), sw(2, "Monitors", false, 44),
         sw(3, "Rotator", false, 95, { errors: ["overpower"] }),
       ] },
     },
@@ -65,6 +70,32 @@ function exampleDevices(): DeviceView[] {
       ] },
     },
     {
+      deviceId: "shellyem-c45bbe6a1f22", displayName: "Shack mains (EM)", name: "Shack mains (EM)", host: "10.0.20.60",
+      generation: 1, model: "SHEM", app: "ShellyEM", mac: "C45BBE6A1F22", authRequired: false, hasCredential: false,
+      status: { health: "Online", channels: [
+        { key: "switch:0", kind: "Switch", index: 0, name: "Shack contactor", on: true, errors: [], flags: [], metered: false },
+        { key: "emeter:0", kind: "Meter", index: 0, name: "Leg A", on: false, powerW: 1184.2, voltageV: 121.3, currentA: 9.84,
+          powerFactor: 0.96, energyWh: 412876, errors: [], flags: [], metered: true },
+        { key: "emeter:1", kind: "Meter", index: 1, name: "Leg B", on: false, powerW: 342.8, voltageV: 120.8, currentA: 2.91,
+          powerFactor: 0.97, energyWh: 128455, errors: [], flags: [], metered: true },
+      ] },
+    },
+    {
+      deviceId: "shelly1-98f4ab12cd34", displayName: "Tower lights (Shelly 1)", name: "Tower lights (Shelly 1)", host: "10.0.30.18",
+      generation: 1, model: "SHSW-1", app: "Shelly1", mac: "98F4AB12CD34", authRequired: true, hasCredential: true,
+      status: { health: "Online", channels: [
+        { key: "switch:0", kind: "Switch", index: 0, name: "Tower beacon", on: false, errors: [], flags: [], metered: false },
+      ] },
+    },
+    {
+      deviceId: "shellydimmerg3-84fce63a9e01", displayName: "On Air sign", name: "On Air sign", host: "10.0.20.34",
+      generation: 3, model: "S3DM-0010WW", app: "DimmerG3", mac: null, authRequired: false, hasCredential: false,
+      status: { health: "Online", channels: [
+        { key: "light:0", kind: "Light", index: 0, name: "On Air", on: false, brightness: 100, powerW: 0,
+          voltageV: 121.0, currentA: 0, errors: [], flags: [], metered: true },
+      ] },
+    },
+    {
       deviceId: "ogemray25a-a1b2c3d4e5f6", displayName: "Linear PSU (25A)", name: "Linear PSU (25A)", host: "10.0.30.40",
       generation: 2, model: "S25A", app: "Ogemray25A", mac: null, authRequired: false, hasCredential: false,
       status: { health: "Unreachable", message: "10.0.30.40 didn't answer in time. Check the address and that this computer can reach that network.", channels: [sw(0, "Linear PSU", false, 0)] },
@@ -78,6 +109,7 @@ function exampleDevices(): DeviceView[] {
 }
 
 const RACK = "shellypro4pm-f008d1d8b8b8", ANT = "shellypro3-c8f09e1a2b3c", LAMP = "shellydimmerg3-84fce63a1b2c", LIN = "ogemray25a-a1b2c3d4e5f6";
+const ONAIR = "shellydimmerg3-84fce63a9e01", OVER = "shellywalldimmer-b0a7329e11c4";
 const t = (deviceId: string, kind: "Switch" | "Light", index: number, on: boolean, brightness: number | null = null): SceneTarget =>
   ({ deviceId, kind, index, on, brightness });
 function exampleScenes(): Scene[] {
@@ -86,17 +118,44 @@ function exampleScenes(): Scene[] {
       t(RACK, "Switch", 0, true), t(RACK, "Switch", 1, true), t(RACK, "Switch", 2, true), t(ANT, "Switch", 0, true), t(LAMP, "Light", 0, true, 70), t(LIN, "Switch", 0, true) ] },
     { id: "s-evening", name: "Evening lights", fadeSeconds: 3, targets: [t(LAMP, "Light", 0, true, 25), t(RACK, "Switch", 2, false)] },
     { id: "s-listen", name: "Listen only", fadeSeconds: null, targets: [t(RACK, "Switch", 0, false), t(RACK, "Switch", 1, true), t(ANT, "Switch", 0, true), t(ANT, "Switch", 2, true)] },
+    { id: "s-standby", name: "Standby", fadeSeconds: 5, targets: [t(RACK, "Switch", 0, false), t(RACK, "Switch", 2, false), t(LIN, "Switch", 0, false), t(LAMP, "Light", 0, true, 15), t(OVER, "Light", 0, false)] },
+  ];
+}
+function exampleRules(): Rule[] {
+  const ago = (min: number) => new Date(Date.now() - min * 60000).toISOString();
+  return [
+    { id: "r-start", name: "Operating when Zeus starts", enabled: true, trigger: { type: "zeusStart" },
+      action: { type: "scene", sceneId: "s-operating", mode: "apply" }, delaySeconds: 5,
+      lastRun: { at: ago(47), ok: false, text: "5 of 6 outputs on. Linear PSU (25A) didn't answer." } },
+    { id: "r-stop", name: "Operating off when Zeus closes", enabled: true, trigger: { type: "zeusStop" },
+      action: { type: "scene", sceneId: "s-operating", mode: "off" } },
+    { id: "r-onair", name: "On Air sign", enabled: true, trigger: { type: "tx" },
+      action: { type: "output", deviceId: ONAIR, kind: "Light", index: 0, on: true, brightness: 100, rampSeconds: 0.5 },
+      endAction: { type: "off" }, debounceSeconds: 0.3, delaySeconds: 0, endDelaySeconds: 3 },
+    { id: "r-6m", name: "6 m preamp", enabled: true, trigger: { type: "band", bands: ["6m"] },
+      action: { type: "output", deviceId: ANT, kind: "Switch", index: 0, on: true }, endAction: { type: "restore" },
+      debounceSeconds: 2, delaySeconds: 0, endDelaySeconds: 0 },
+    { id: "r-bev", name: "Beverage on 160 m", enabled: true, trigger: { type: "frequency", fromMHz: 1.8, toMHz: 2.0 },
+      action: { type: "output", deviceId: ANT, kind: "Switch", index: 2, on: true }, endAction: { type: "off" },
+      debounceSeconds: 2, delaySeconds: 0, endDelaySeconds: 5 },
+    { id: "r-brake", name: "Rotator on when Zeus starts", enabled: false, trigger: { type: "zeusStart" },
+      action: { type: "output", deviceId: RACK, kind: "Switch", index: 3, on: true }, delaySeconds: 20 },
+    { id: "r-idle", name: "Standby after an hour idle", enabled: true, trigger: { type: "idle", minutes: 60, warnMinutes: 5, extendMinutes: 30 },
+      action: { type: "scene", sceneId: "s-standby", mode: "apply" }, endAction: { type: "restore" } },
+    { id: "r-night", name: "Lights out at 23:00", enabled: true, trigger: { type: "time", at: "23:00", idleMinutes: 15, extendMinutes: 30 },
+      action: { type: "scene", sceneId: "s-evening", mode: "off" } },
   ];
 }
 const exampleLayout = (): Layout => ({
   columns: 3,
   order: [
-    ["shellypro4pm-f008d1d8b8b8", "shelly1g4-7c2c6771eea0"],
-    ["shellydimmerg3-84fce63a1b2c", "shellywalldimmer-b0a7329e11c4", "shelly1g4-7c2c6771f310"],
-    ["shellypro3-c8f09e1a2b3c", "ogemray25a-a1b2c3d4e5f6", "shellyplugus-c049ef8a2b10"],
+    ["shellypro4pm-f008d1d8b8b8", "shellydimmerg3-84fce63a1b2c", "shellypro3-c8f09e1a2b3c",
+     "shellyem-c45bbe6a1f22", "shellywalldimmer-b0a7329e11c4", "shellydimmerg3-84fce63a9e01",
+     "shelly1g4-7c2c6771eea0", "shelly1-98f4ab12cd34", "shelly1g4-7c2c6771f310",
+     "ogemray25a-a1b2c3d4e5f6", "shellyplugus-c049ef8a2b10"],
   ],
 });
-const state = { scenario: "normal" as Scenario, devices: exampleDevices(), scenes: exampleScenes(), layout: exampleLayout() };
+const state = { scenario: "normal" as Scenario, devices: exampleDevices(), scenes: exampleScenes(), layout: exampleLayout(), rules: exampleRules() };
 
 // ---- pretend discovery: saved networks, a timed scan, and one device that moved
 const disc = {
@@ -109,7 +168,8 @@ const disc = {
 const pool = () => [
   { at: 8, found: { device: { host: "10.0.20.14", deviceId: RACK, generation: 2, app: "Pro4PM", model: "SPSW-104PE16EU", name: "Shack Rack", authRequired: true, supported: true, foundBy: ["mdns", "sweep"] }, added: true } },
   { at: 12, found: { device: { host: "10.0.20.77", deviceId: "shellyplus2pm-d48afc41a0b2", generation: 2, app: "Plus2PM", model: "SNSW-102P16EU", name: "Bench outlets", authRequired: false, supported: true, foundBy: ["mdns", "sweep"] }, added: false } },
-  { at: 30, found: { device: { host: "10.0.20.81", deviceId: "shellydimmer2-98cdac1f22e0", generation: 1, app: null, model: "SHDM-2", name: null, authRequired: false, supported: false, foundBy: ["sweep"] }, added: false } },
+  { at: 30, found: { device: { host: "10.0.20.81", deviceId: "shellydimmer2-98cdac1f22e0", generation: 1, app: "Dimmer2", model: "SHDM-2", name: null, authRequired: true, supported: true, foundBy: ["sweep"] }, added: false } },
+  { at: 55, found: { device: { host: "10.0.20.60", deviceId: "shellyem-c45bbe6a1f22", generation: 1, app: "ShellyEM", model: "SHEM", name: "Shack mains (EM)", authRequired: false, supported: true, foundBy: ["sweep"] }, added: true } },
   { at: 45, found: { device: { host: "10.0.20.90", deviceId: "shellyplugus-e4b3230a9c11", generation: 2, app: "PlugUS", model: "SNPL-00116US", name: "Heater plug", authRequired: true, supported: true, foundBy: ["sweep"] }, added: false } },
   { at: 78, found: { device: { host: "10.0.30.52", deviceId: LIN, generation: 2, app: "Ogemray25A", model: "S25A", name: "Linear PSU (25A)", authRequired: false, supported: true, foundBy: ["sweep"] }, added: true, addressUpdatedFrom: "10.0.30.40" } },
 ];
@@ -159,13 +219,238 @@ function applyPower(ch: ChannelState) {
   ch.currentA = ch.on ? +(w / 121.4).toFixed(2) : 0;
 }
 
+
+// ---- pretend automation engine: a small stand-in for the backend rules runner
+const BAND_EDGES: Record<string, [number, number]> = {
+  "160m": [1.8, 2.0], "80m": [3.5, 4.0], "60m": [5.33, 5.41], "40m": [7.0, 7.3], "30m": [10.1, 10.15], "20m": [14.0, 14.35],
+  "17m": [18.068, 18.168], "15m": [21.0, 21.45], "12m": [24.89, 24.99], "10m": [28.0, 29.7], "6m": [50.0, 54.0], "4m": [70.0, 70.5], "2m": [144.0, 148.0],
+};
+const BAND_DIAL: Record<string, number> = { "160m": 1.84, "80m": 3.573, "60m": 5.357, "40m": 7.074, "30m": 10.136, "20m": 14.074, "17m": 18.1, "15m": 21.074, "12m": 24.915, "10m": 28.074, "6m": 50.313, "4m": 70.154, "2m": 144.174 };
+const bandOf = (mhz: number) => Object.entries(BAND_EDGES).find(([, [a, b]]) => mhz >= a && mhz <= b)?.[0] ?? null;
+
+type Snapshot = Map<string, { on: boolean; brightness?: number | null }>;
+const eng = {
+  paused: false,
+  radio: { connected: true, frequencyHz: 14.074e6, band: "20m" as string | null, mode: "DIGU", mox: false },
+  lastActivity: Date.now(),
+  idleFiresAt: Date.now() + 42 * 60000,
+  idleState: "active" as "active" | "warning" | "idle",
+  active: new Map<string, boolean>(),           // lasting rules currently "on"
+  timers: new Map<string, number>(),
+  snapshots: new Map<string, Snapshot>(),
+  pending: [] as AutomationState["pending"],
+  txQueue: [] as { ruleId: string; text: string; run: () => void }[],
+  log: [] as AutomationState["log"],
+};
+const idleRule = () => state.rules.find((r) => r.enabled && r.trigger.type === "idle");
+const now = () => new Date().toISOString();
+function log(text: string, ok = true) { eng.log.unshift({ at: now(), text, ok }); eng.log = eng.log.slice(0, 20); }
+function chOf(deviceId: string, kind: string, index: number) {
+  return state.devices.find((d) => d.deviceId === deviceId)?.status.channels.find((c) => c.kind === kind && c.index === index);
+}
+function setCh(deviceId: string, kind: string, index: number, on: boolean, brightness?: number | null) {
+  const d = state.devices.find((x) => x.deviceId === deviceId);
+  const ch = chOf(deviceId, kind, index);
+  if (!d || !ch) return `a removed output`;
+  if (d.status.health !== "Online") throw new Error(`${d.displayName} didn't answer`);
+  ch.on = on;
+  if (ch.kind === "Light" && on && brightness) ch.brightness = brightness;
+  if (ch.kind === "Light" && ch.metered) ch.powerW = ch.on ? +((ch.brightness ?? 0) * 0.114).toFixed(1) : 0;
+  applyPower(ch);
+  return ch.name ?? d.displayName;
+}
+function targetsOf(a: Action): { deviceId: string; kind: string; index: number }[] {
+  if (a.type === "output") return [a];
+  return state.scenes.find((s) => s.id === a.sceneId)?.targets ?? [];
+}
+function snapshot(a: Action): Snapshot {
+  const m: Snapshot = new Map();
+  for (const tg of targetsOf(a)) { const ch = chOf(tg.deviceId, tg.kind, tg.index); if (ch) m.set(`${tg.deviceId}|${tg.kind}|${tg.index}`, { on: ch.on, brightness: ch.brightness }); }
+  return m;
+}
+function perform(a: Action): string {
+  if (a.type === "output") {
+    const name = setCh(a.deviceId, a.kind, a.index, a.on, a.brightness);
+    return `${name} ${a.on ? "on" : "off"}${a.on && a.brightness && a.kind === "Light" ? ` at ${a.brightness}%` : ""}`;
+  }
+  const scene = state.scenes.find((s) => s.id === a.sceneId);
+  if (!scene) throw new Error("scene was deleted");
+  let ok = 0; const bad: string[] = [];
+  for (const tg of scene.targets) {
+    try { setCh(tg.deviceId, tg.kind, tg.index, a.mode === "off" ? false : tg.on, tg.brightness); ok++; }
+    catch (e) { bad.push((e as Error).message); }
+  }
+  if (bad.length) throw new Error(`${scene.name}: ${ok} of ${scene.targets.length} outputs. ${[...new Set(bad)].join(", ")}.`);
+  return a.mode === "off" ? `${scene.name} all off` : `${scene.name} applied`;
+}
+/** Runs an action for a rule; anything but the on-air light waits while TX is on. */
+function runFor(rule: Rule, a: Action | EndAction, label: string, isEnd = false) {
+  const go = () => {
+    try {
+      let text: string;
+      if (a.type === "restore") {
+        const snap = eng.snapshots.get(rule.id);
+        if (!snap) return;
+        for (const [k, v] of snap) { const [id, kind, idx] = k.split("|"); try { setCh(id, kind, +idx, v.on, v.brightness); } catch { /* offline */ } }
+        eng.snapshots.delete(rule.id);
+        text = "put back how it was";
+      } else if (a.type === "none") return;
+      else if (a.type === "off") text = perform(rule.action.type === "scene" ? { ...rule.action, mode: "off" } : { ...rule.action, on: false });
+      else {
+        if (!isEnd) eng.snapshots.set(rule.id, snapshot(a));
+        text = perform(a);
+      }
+      rule.lastRun = { at: now(), ok: true, text };
+      log(`${rule.name}: ${text}`);
+    } catch (e) {
+      rule.lastRun = { at: now(), ok: false, text: (e as Error).message };
+      log(`${rule.name}: ${(e as Error).message}`, false);
+    }
+  };
+  if (eng.radio.mox && rule.trigger.type !== "tx") {
+    eng.txQueue.push({ ruleId: rule.id, text: `${rule.name} (${label})`, run: go });
+    log(`${rule.name}: waiting for TX to end`);
+  } else go();
+}
+function later(key: string, seconds: number | null | undefined, fn: () => void, text?: string) {
+  window.clearTimeout(eng.timers.get(key));
+  eng.pending = eng.pending.filter((p) => p.ruleId !== key);
+  if (!seconds) { fn(); return; }
+  if (text) eng.pending.push({ ruleId: key, text, at: new Date(Date.now() + seconds * 1000).toISOString() });
+  eng.timers.set(key, window.setTimeout(() => { eng.pending = eng.pending.filter((p) => p.ruleId !== key); eng.timers.delete(key); fn(); }, seconds * 1000));
+}
+function cancel(key: string) { window.clearTimeout(eng.timers.get(key)); eng.timers.delete(key); eng.pending = eng.pending.filter((p) => p.ruleId !== key); }
+
+function evaluate() {
+  if (eng.paused) return;
+  const mhz = (eng.radio.frequencyHz ?? 0) / 1e6;
+  for (const r of state.rules) {
+    if (!r.enabled) continue;
+    const t = r.trigger;
+    let match: boolean;
+    if (t.type === "band") match = !!eng.radio.band && t.bands.includes(eng.radio.band);
+    else if (t.type === "frequency") match = mhz >= t.fromMHz && mhz <= t.toMHz;
+    else if (t.type === "tx") match = eng.radio.mox;
+    else continue;
+    const was = eng.active.get(r.id) ?? false;
+    const want = eng.timers.has(`${r.id}:on`) ? true : eng.timers.has(`${r.id}:off`) ? false : was;
+    if (match === want) {
+      // Condition flipped back before the debounce ran out: cancel it.
+      if (match === was) { cancel(`${r.id}:on`); cancel(`${r.id}:off`); }
+      continue;
+    }
+    if (match) {
+      cancel(`${r.id}:off`);
+      if (was) continue;
+      const wait = (r.debounceSeconds ?? 0) + (r.delaySeconds ?? 0);
+      later(`${r.id}:on`, wait, () => { eng.active.set(r.id, true); runFor(r, r.action, "start"); }, `${r.name}: starts in ${wait}s if it holds`);
+    } else {
+      cancel(`${r.id}:on`);
+      if (!was) continue;
+      const wait = r.endDelaySeconds ?? 0;
+      later(`${r.id}:off`, wait, () => { eng.active.set(r.id, false); if (r.endAction) runFor(r, r.endAction, "end", true); }, `${r.name}: ends in ${wait}s`);
+    }
+  }
+}
+function activity(why: string) {
+  eng.lastActivity = Date.now();
+  const rule = idleRule();
+  if (eng.idleState === "idle" && rule) {
+    log(`Activity (${why}): welcome back`);
+    if (rule.endAction) runFor(rule, rule.endAction, "return", true);
+  }
+  eng.idleState = "active";
+  if (rule && rule.trigger.type === "idle") eng.idleFiresAt = Date.now() + rule.trigger.minutes * 60000;
+}
+function idleTick() {
+  const rule = idleRule();
+  if (eng.paused || !rule || rule.trigger.type !== "idle") return;
+  const left = eng.idleFiresAt - Date.now();
+  if (eng.idleState === "active" && left <= rule.trigger.warnMinutes * 60000) { eng.idleState = "warning"; log(`${rule.name}: warning shown`); }
+  if (eng.idleState === "warning" && left <= 0) { eng.idleState = "idle"; runFor(rule, rule.action, "idle"); }
+}
+window.setInterval(idleTick, 500);
+function flushTx() {
+  const q = eng.txQueue; eng.txQueue = [];
+  for (const item of q) item.run();
+}
+function automationView(): AutomationState {
+  const rule = idleRule();
+  return clone({
+    paused: eng.paused,
+    radio: eng.radio,
+    idle: {
+      state: rule ? eng.idleState : "off",
+      ruleId: rule?.id ?? null,
+      lastActivity: new Date(eng.lastActivity).toISOString(),
+      firesAt: rule ? new Date(eng.idleFiresAt).toISOString() : null,
+      extendMinutes: rule && rule.trigger.type === "idle" ? rule.trigger.extendMinutes : null,
+    },
+    pending: [...eng.pending, ...eng.txQueue.map((q) => ({ ruleId: q.ruleId, text: q.text, waitingForTx: true }))],
+    log: eng.log,
+  });
+}
+const zeus = {
+  tune(mhz: number) { eng.radio.frequencyHz = Math.round(mhz * 1e6); eng.radio.band = bandOf(mhz); activity("tuning"); evaluate(); },
+  mode(m: string) { eng.radio.mode = m; activity("mode"); },
+  mox(on: boolean) { eng.radio.mox = on; activity("TX"); evaluate(); if (!on) flushTx(); },
+  start() {
+    log("Zeus started");
+    for (const r of state.rules) if (r.enabled && r.trigger.type === "zeusStart") later(`${r.id}:start`, r.delaySeconds, () => runFor(r, r.action, "start"), `${r.name}: in ${r.delaySeconds}s`);
+  },
+  stop() {
+    log("Zeus closing");
+    for (const r of state.rules) if (r.enabled && r.trigger.type === "zeusStop") runFor(r, r.action, "stop");
+  },
+  nearIdle() { const rule = idleRule(); if (rule?.trigger.type === "idle") { eng.idleState = "active"; eng.idleFiresAt = Date.now() + 65000; eng.lastActivity = Date.now() - (rule.trigger.minutes * 60000 - 65000); } },
+  elevenPm() {
+    for (const r of state.rules) {
+      if (!r.enabled || r.trigger.type !== "time") continue;
+      const idleFor = (Date.now() - eng.lastActivity) / 60000;
+      if (eng.idleState === "idle" || idleFor >= r.trigger.idleMinutes) runFor(r, r.action, "time");
+      else {
+        const next = new Date(); next.setHours(23, r.trigger.extendMinutes, 0, 0);
+        r.lastRun = { at: now(), ok: true, text: `Station active at ${r.trigger.at}; checking again at ${next.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` };
+        log(`${r.name}: you're active, checking again in ${r.trigger.extendMinutes} min`);
+        eng.pending = eng.pending.filter((p) => p.ruleId !== r.id);
+        eng.pending.push({ ruleId: r.id, text: `${r.name}: next check`, at: next.toISOString() });
+      }
+    }
+  },
+};
+
 const api: ZeusPluginApi = {
   registerPanel() {},
   async callBackend(method, path, body: any) {
     await new Promise((r) => setTimeout(r, 180));
     if (state.scenario === "down") throw new TypeError("Failed to fetch");
     const devices = state.devices;
-    if (method === "GET" && path === "/status") return json({ version: "0.4.2", pollIntervalMs: 2000, devices: clone(devices), scenes: clone(state.scenes), layout: state.scenario === "empty" ? null : clone(state.layout) });
+    if (method === "GET" && path === "/status")
+      return json({ version: "0.5.0", pollIntervalMs: 1000, devices: clone(devices), scenes: clone(state.scenes), rules: clone(state.rules),
+        automation: automationView(), layout: state.scenario === "empty" ? null : clone(state.layout) });
+    if (method !== "GET" && !path.startsWith("/discovery") && path !== "/layout") activity("PowerStation");
+
+    if (path === "/automation" && method === "PUT") { if (typeof body?.paused === "boolean") { eng.paused = body.paused; log(body.paused ? "Automations paused" : "Automations running"); } return json(automationView()); }
+    if (path === "/automation/activity") { log("I'm here"); return json(automationView()); }
+    if (path === "/automation/extend") {
+      const r = idleRule(); if (r?.trigger.type === "idle") { eng.idleFiresAt += r.trigger.extendMinutes * 60000; eng.idleState = "active"; log(`Idle pushed back ${r.trigger.extendMinutes} min`); }
+      return json(automationView());
+    }
+    const rm = path.match(/^\/rules(?:\/([^/]+))?(\/test)?$/);
+    if (rm) {
+      const rule = rm[1] ? state.rules.find((x) => x.id === decodeURIComponent(rm[1])) : undefined;
+      if (rm[1] && !rule) return fail("That rule doesn't exist.", 404);
+      if (method === "DELETE") { state.rules = state.rules.filter((x) => x !== rule); eng.active.delete(rule!.id); return json({ removed: rule!.id }); }
+      if (rm[2]) { runFor(rule!, rule!.action, "test"); return json(automationView()); }
+      if (body?.trigger?.type === "tx" && body?.action?.type !== "output") return fail("A TX rule can only switch one light.");
+      if (body?.trigger?.type === "frequency" && !(body.trigger.fromMHz < body.trigger.toMHz)) return fail("The range's From must be below To.");
+      if (body?.trigger?.type === "band" && !body.trigger.bands.length) return fail("Pick at least one band.");
+      const saved: Rule = { ...body, id: rule?.id ?? `r-${Date.now()}`, lastRun: rule?.lastRun ?? null };
+      state.rules = rule ? state.rules.map((x) => (x === rule ? saved : x)) : [...state.rules, saved];
+      if (rule) eng.active.delete(rule.id);
+      evaluate();
+      return json(saved);
+    }
     if (path === "/layout" && method === "PUT") {
       state.layout = { columns: body.columns, order: body.order };
       return json(state.layout);
@@ -200,7 +485,7 @@ const api: ZeusPluginApi = {
         if (!body?.targets?.length) return fail("Pick at least one output for the scene.");
         if (state.scenes.some((x) => x.id !== scene?.id && x.name.toLowerCase() === name.toLowerCase()))
           return fail(`There's already a scene called "${name}".`, 409);
-        const saved: Scene = { id: scene?.id ?? `s-${Date.now()}`, name, fadeSeconds: body.fadeSeconds || null, targets: body.targets };
+        const saved: Scene = { id: scene?.id ?? `s-${Date.now()}`, name, fadeSeconds: body.fadeSeconds || null, safetyMinutes: body.safetyMinutes || null, targets: body.targets };
         state.scenes = scene ? state.scenes.map((x) => (x === scene ? saved : x)) : [...state.scenes, saved];
         return json(saved);
       }
@@ -258,6 +543,9 @@ const api: ZeusPluginApi = {
         d.hasCredential = true; d.authRequired = true;
         if (d.status.health === "Unauthorized") d.status = { health: "Online", channels: [sw(0, "Soldering station", false, 48)] };
       }
+      if (body.safetyMinutes) for (const [k, v] of Object.entries(body.safetyMinutes)) {
+        const ch = d.status.channels.find((c) => c.key === k); if (ch) ch.safetyMinutes = (v as number) || null;
+      }
       if (body.channelNames) for (const [k, v] of Object.entries(body.channelNames)) {
         const ch = d.status.channels.find((c) => c.key === k); if (ch) ch.name = (v as string) || null;
       }
@@ -281,12 +569,45 @@ const api: ZeusPluginApi = {
 
 const client = createClient(api);
 
-function Frame({ title, children }: { title: string; children: ReactNode }) {
+function Frame({ title, children, small }: { title: string; children: ReactNode; small?: boolean }) {
   return (
-    <section className="mk-frame">
+    <section className={`mk-frame${small ? " mk-frame--small" : ""}`}>
       <header className="mk-frame-bar"><span className="mk-dot" aria-hidden="true" />{title}</header>
       <div className="mk-frame-body">{children}</div>
     </section>
+  );
+}
+
+/** Stand-in for Zeus itself: tune, key TX and so on, to watch the rules react. */
+function PretendZeus() {
+  const [, force] = useState(0);
+  useEffect(() => { const t = window.setInterval(() => force((n) => n + 1), 500); return () => window.clearInterval(t); }, []);
+  const r = eng.radio;
+  const [freq, setFreq] = useState("");
+  return (
+    <div className="mk-zeus" aria-label="Pretend Zeus radio controls">
+      <div className="mk-zeus-title">Pretend Zeus <span>(mockup only: drives the rules)</span></div>
+      <div className="mk-zeus-row">
+        <span className="mk-zeus-freq">{((r.frequencyHz ?? 0) / 1e6).toFixed(3)} MHz · {r.band ?? "out of band"} · {r.mode}</span>
+        <button className={`mk-tx${r.mox ? " mk-tx--on" : ""}`} aria-pressed={r.mox} onClick={() => zeus.mox(!r.mox)}>{r.mox ? "TX (click to unkey)" : "Key TX"}</button>
+        <select className="mk-small" value={r.mode} onChange={(e) => zeus.mode(e.currentTarget.value)} aria-label="Mode">
+          {["LSB", "USB", "CW", "DIGU", "AM", "FM"].map((m) => <option key={m}>{m}</option>)}
+        </select>
+        <form onSubmit={(e) => { e.preventDefault(); const v = parseFloat(freq); if (v > 0) zeus.tune(v); }} className="mk-zeus-tune">
+          <input className="mk-small" placeholder="Tune MHz" value={freq} onChange={(e) => setFreq(e.currentTarget.value)} aria-label="Frequency in MHz" inputMode="decimal" />
+          <button className="mk-small">Tune</button>
+        </form>
+      </div>
+      <div className="mk-zeus-row mk-bands">
+        {BANDS.map((b) => <button key={b} aria-pressed={r.band === b} onClick={() => zeus.tune(BAND_DIAL[b])}>{b}</button>)}
+      </div>
+      <div className="mk-zeus-row">
+        <button className="mk-small" onClick={() => zeus.start()}>Zeus starts</button>
+        <button className="mk-small" onClick={() => zeus.stop()}>Zeus closes</button>
+        <button className="mk-small" onClick={() => zeus.nearIdle()}>Skip to 1 min before idle</button>
+        <button className="mk-small" onClick={() => zeus.elevenPm()}>Pretend it's 23:00</button>
+      </div>
+    </div>
   );
 }
 
@@ -297,9 +618,14 @@ function App() {
     state.scenario = s;
     state.devices = s === "empty" ? [] : exampleDevices();
     state.scenes = s === "empty" ? [] : exampleScenes();
+    state.rules = s === "empty" ? [] : exampleRules();
     state.layout = exampleLayout();
     window.clearInterval(disc.timer);
     disc.scan = { ...disc.scan, running: false, phase: "idle", probed: 0, total: 0, found: [], finishedAt: null, cancelled: false };
+    for (const t of eng.timers.values()) window.clearTimeout(t);
+    Object.assign(eng, { paused: false, lastActivity: Date.now(), idleFiresAt: Date.now() + 42 * 60000, idleState: "active", pending: [], txQueue: [], log: [] });
+    eng.radio = { connected: true, frequencyHz: 14.074e6, band: "20m", mode: "DIGU", mox: false };
+    eng.active.clear(); eng.timers.clear(); eng.snapshots.clear();
     setScenario(s);
     setEpoch((e) => e + 1);
   };
@@ -309,15 +635,17 @@ function App() {
         <label className="mk-select">
           <span>Situation</span>
           <select id="mk-scenario" value={scenario} onChange={(e) => pick(e.currentTarget.value as Scenario)}>
-            <option value="normal">Example shack (8 devices)</option>
+            <option value="normal">Example shack (11 devices)</option>
             <option value="empty">First run, no devices yet</option>
             <option value="down">Zeus backend not responding</option>
           </select>
         </label>
         <button className="mk-reset" onClick={() => pick(scenario)}>Reset example</button>
       </div>
+      <PretendZeus />
       <div className="mk-stage" key={epoch}>
-        <Frame title="PowerStation"><PowerStationPanel client={client} initialTab="status" /></Frame>
+        <Frame title="PowerStation"><PowerStationPanel client={client} /></Frame>
+        <Frame title="PowerStation Idle" small><IdlePillPanel client={client} /></Frame>
       </div>
     </>
   );

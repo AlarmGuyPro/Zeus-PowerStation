@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// "Find devices" on the Setup tab: saved networks, a scan with progress, and
+// "Find devices" in setup: saved networks, a scan with progress, and
 // results that can be added in place.
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ApiError, type DeviceView, type DiscoveryView, type FoundDevice, type PowerStationClient } from "./api";
@@ -295,13 +295,13 @@ function FoundRow({
             <span className={c("badge", "badge--ok")}>Added</span>
             {justAdded && (
               <button type="button" className={c("button", "button--small")} onClick={onShowStatus}>
-                Show on Status tab
+                Show on panel
               </button>
             )}
           </>
         ) : !d.supported ? (
-          <span className={c("badge", "badge--muted")} title="Gen1 support is coming in a later PowerStation update">
-            Gen1 · coming soon
+          <span className={c("badge", "badge--muted")} title="PowerStation can't control this model yet">
+            Not supported
           </span>
         ) : (
           <button
@@ -325,6 +325,9 @@ function FoundRow({
             <div className={c("field")}>
               <label htmlFor={`${ids}-pw`}>Device password</label>
               <input id={`${ids}-pw`} type="password" autoComplete="off" value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+              {d.generation === 1 && (
+                <span className={c("hint")}>Gen1 can't use a hashed password, so it's stored as entered on this computer.</span>
+              )}
             </div>
           )}
           <button

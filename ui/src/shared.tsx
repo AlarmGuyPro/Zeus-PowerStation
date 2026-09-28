@@ -155,5 +155,5 @@ export const fmt = {
 
 export function channelLabel(ch: { name?: string | null; kind: string; index: number }) {
   if (ch.name) return ch.name;
-  return `${ch.kind === "Light" ? "Dimmer" : "Output"} ${ch.index + 1}`;
+  return `${ch.kind === "Light" ? "Dimmer" : ch.kind === "Meter" ? "Meter" : "Output"} ${ch.index + 1}`;
 }
