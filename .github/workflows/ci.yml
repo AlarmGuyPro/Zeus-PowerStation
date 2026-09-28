@@ -46,7 +46,7 @@ jobs:
       - name: Build
         run: dotnet build Zeus.PowerStation.slnx -c Release --nologo
 
-      - name: Test (Shelly Gen2 simulator, no hardware)
+      - name: Test (Shelly simulators, no hardware)
         run: dotnet run --project tests/PowerStation.Tests -c Release --no-build
 
       - name: Package

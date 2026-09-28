@@ -2,9 +2,16 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { ApiError, type ChannelState, type DeviceView, type PowerStationClient } from "./api";
 import { BackendError, HealthLabel, Loading, Notice, channelLabel, fmt, type StatusState } from "./shared";
-import { DeviceGrid, LayoutToolbar, normalize, useLayout } from "./layout";
+import { DeviceGrid, useLayout } from "./layout";
 import { ScenesStrip } from "./scenes";
 import { c } from "./styles";
+
+const ALERT_TEXT: Record<string, string> = {
+  voltageHigh: "High voltage",
+  voltageLow: "Low voltage",
+  currentHigh: "High current",
+  currentLow: "Low current",
+};
 
 const ERROR_TEXT: Record<string, string> = {
   overpower: "Overpower",
@@ -15,19 +22,22 @@ const ERROR_TEXT: Record<string, string> = {
   unsupported_load: "Unsupported load",
 };
 
-/** Status tab: scene buttons, then the device cards in the operator's grid. */
+/** Everyday view: the Scenes box, then the device cards in the operator's grid. */
 export function StatusView({
   client,
   status,
+  arranging,
+  onDoneArranging,
   onGoToSetup,
 }: {
   client: PowerStationClient;
   status: StatusState;
+  arranging: boolean;
+  onDoneArranging: () => void;
   onGoToSetup: () => void;
 }) {
   const { data, error, loading } = status;
   const { layout, save, error: layoutError } = useLayout(client, data?.layout);
-  const [arranging, setArranging] = useState(false);
 
   if (loading && !data) return <Loading />;
   if (!data && error) return <BackendError error={error} onRetry={status.reload} />;
@@ -36,7 +46,7 @@ export function StatusView({
     return (
       <div className={c("empty")}>
         <strong>No devices yet</strong>
-        <p>Add your Shelly relays, plugs and dimmers on the Setup tab.</p>
+        <p>Find and add your Shelly relays, plugs and dimmers in setup.</p>
         <button type="button" className={c("button", "button--primary")} onClick={onGoToSetup}>
           Add a device
         </button>
@@ -45,19 +55,20 @@ export function StatusView({
   return (
     <>
       {error && <Notice tone="warn">Lost contact with PowerStation. Showing the last known state.</Notice>}
+      <MainsBanner status={status} />
       <ScenesStrip client={client} status={status} />
-      <LayoutToolbar
-        layout={layout}
-        arranging={arranging}
-        onColumns={(n) => save({ columns: n, order: normalize({ columns: 1, order: [layout.order.flat()] }, data.devices) })}
-        onArrange={setArranging}
-      />
       {arranging && (
-        <p className={c("hint")} style={{ margin: "0 0 8px" }}>
-          Drag a card onto another to take its place, or use the arrows. Choose Done arranging when you're finished.
-        </p>
+        <div className={c("notice", "notice--ok", "row")} role="status">
+          <span style={{ flex: 1, minWidth: 180 }}>
+            Drag a card onto another to take its place, or use the arrows.
+          </span>
+          <button type="button" className={c("button", "button--small", "button--primary")} onClick={onDoneArranging}>
+            Done arranging
+          </button>
+        </div>
       )}
       {layoutError && <Notice tone="warn">{layoutError}</Notice>}
+      <h3 className={c("group-label")}>Devices</h3>
       <DeviceGrid
         devices={data.devices}
         layout={layout}
@@ -68,6 +79,23 @@ export function StatusView({
         )}
       />
     </>
+  );
+}
+
+function MainsBanner({ status }: { status: StatusState }) {
+  const now = status.data?.readings?.mainsNow;
+  const a = now?.alert;
+  if (!now || !a) return null;
+  const low = a.kind === "voltageLow";
+  return (
+    <div className={c("mains-banner", a.level === "limit" && "mains-banner--limit")} role="status">
+      <strong>{low ? "Low" : "High"} mains voltage: {fmt.volts(a.value)}</strong>
+      <span>
+        {a.level === "limit" ? (low ? "below the limit" : "above the limit") : low ? "below normal" : "above normal"} of{" "}
+        {fmt.volts(a.threshold)} since {new Date(a.since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}, seen on{" "}
+        {now.outputs} output{now.outputs === 1 ? "" : "s"}.
+      </span>
+    </div>
   );
 }
 
@@ -102,7 +130,7 @@ function DeviceCard({
         {!online && health !== "Pending" && (
           <Notice tone={health === "Unreachable" ? "error" : "warn"}>
             {health === "Unauthorized"
-              ? "This device needs its password. Enter it on the Setup tab."
+              ? "This device needs its password. Enter it in setup (the gear, top right)."
               : message ?? "The device isn't answering."}
           </Notice>
         )}
@@ -169,17 +197,35 @@ function ChannelTile({
   const errors = channel.errors.map((e) => ERROR_TEXT[e] ?? e);
   const uncalibrated = channel.flags.includes("uncalibrated");
 
+  const alerts = channel.alerts ?? [];
+  const tone = (kinds: string[]) => {
+    const a = alerts.filter((x) => kinds.includes(x.kind));
+    return a.some((x) => x.level === "limit") ? "reading--limit" : a.length ? "reading--warn" : null;
+  };
   const readings = channel.metered && (
     <div className={c("meter")} aria-label={`${label} readings`}>
       {channel.powerW != null && <span className={c("meter-main")}>{fmt.watts(channel.powerW)}</span>}
-      {channel.voltageV != null && <span>{fmt.volts(channel.voltageV)}</span>}
-      {channel.currentA != null && <span>{fmt.amps(channel.currentA)}</span>}
+      {channel.voltageV != null && <span className={c(tone(["voltageHigh", "voltageLow"]))}>{fmt.volts(channel.voltageV)}</span>}
+      {channel.currentA != null && <span className={c(tone(["currentHigh", "currentLow"]))}>{fmt.amps(channel.currentA)}</span>}
       {channel.energyWh != null && <span>{fmt.energy(channel.energyWh)}</span>}
       {channel.temperatureC != null && <span>{fmt.temp(channel.temperatureC)}</span>}
     </div>
   );
-  const badges = (errors.length > 0 || uncalibrated) && (
+  // Voltage is one supply for the whole station: it's colored here and reported once in the mains banner.
+  const currentAlerts = alerts.filter((a) => a.kind.startsWith("current"));
+  const badges = (errors.length > 0 || uncalibrated || currentAlerts.length > 0) && (
     <div className={c("row")}>
+      {currentAlerts.map((a) => (
+        <span
+          key={a.kind}
+          className={c("badge", a.level === "limit" && "badge--danger")}
+          title={`${ALERT_TEXT[a.kind]}: ${a.kind.startsWith("voltage") ? fmt.volts(a.value) : fmt.amps(a.value)}, ${
+            a.kind.endsWith("High") ? "above" : "below"
+          } ${a.kind.startsWith("voltage") ? fmt.volts(a.threshold) : fmt.amps(a.threshold)} since ${new Date(a.since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
+        >
+          {ALERT_TEXT[a.kind]}
+        </span>
+      ))}
       {errors.map((e) => (
         <span key={e} className={c("badge", "badge--danger")}>
           {e}
@@ -200,6 +246,29 @@ function ChannelTile({
     </div>
   );
 
+  const safety = channel.safetyMinutes ? (
+    <span className={c("safety")} title={`Safety timer: the device turns this off ${channel.safetyMinutes} min after Zeus stops renewing it`}>
+      <TimerIcon /> {channel.safetyMinutes} min
+    </span>
+  ) : null;
+
+  if (channel.kind === "Meter")
+    return (
+      <div className={c("tile", "tile--meter")}>
+        <div className={c("tile-top")}>
+          <span className={c("tile-label")}>
+            <span className={c("meter-icon")} aria-hidden="true">≈</span>
+            <span className={c("tile-name")} title={label}>
+              {label}
+            </span>
+          </span>
+          <span className={c("state")}>Meter</span>
+        </div>
+        {readings}
+        {badges}
+      </div>
+    );
+
   if (channel.kind === "Light")
     return (
       <div className={c("tile", "tile--dimmer", channel.on && "tile--on")}>
@@ -214,6 +283,7 @@ function ChannelTile({
           onLevel={(v) => send({ action: "brightness", brightness: v })}
         >
           {readings}
+          {safety}
         </WallDimmer>
         {badges}
       </div>
@@ -233,8 +303,18 @@ function ChannelTile({
         {busy ? "…" : channel.on ? "Turn off" : "Turn on"}
       </button>
       {readings}
+      {safety}
       {badges}
     </div>
+  );
+}
+
+function TimerIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" focusable="false">
+      <circle cx="8" cy="9" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M8 6v3l2 1.5M6 1.5h4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -371,22 +451,22 @@ function WallDimmer({
         <span className={c("wd-screw")} aria-hidden="true" />
       </div>
       <div className={c("wd-side")}>
-        <div className={c("wd-level")} aria-live="polite">
-          {on ? `${level}%` : "Off"}
-        </div>
-        <div className={c("row")}>
+        <div className={c("wd-steps")}>
           <button
             type="button"
-            className={c("button", "button--small")}
+            className={c("step", "step--down")}
             aria-label={`${label}: dimmer down 10%`}
             disabled={disabled || levelDisabled || !on || level <= 1}
             onClick={() => set(level - 10)}
           >
             −
           </button>
+          <span className={c("wd-level")} aria-live="polite">
+            {on ? `${level}%` : "Off"}
+          </span>
           <button
             type="button"
-            className={c("button", "button--small")}
+            className={c("step", "step--up")}
             aria-label={`${label}: dimmer up 10%`}
             disabled={disabled || levelDisabled || level >= 100}
             onClick={() => set(on ? level + 10 : Math.max(level, 10))}

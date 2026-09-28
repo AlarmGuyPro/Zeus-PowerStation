@@ -3,17 +3,12 @@
 // plugin API. Panel ids must match ui.panels[].id in plugin.json.
 import { createClient, type ZeusPluginApi } from "./api";
 import { PowerStationPanel } from "./PowerStationPanel";
+import { IdlePillPanel } from "./automations";
 
 export default function register(api: ZeusPluginApi) {
   const client = createClient(api);
-  // One panel with Status and Setup tabs. The second id is kept so a panel
-  // docked from an earlier version keeps working; it opens on Setup.
-  api.registerPanel({
-    id: "powerstation-controls",
-    component: () => <PowerStationPanel client={client} initialTab="status" />,
-  });
-  api.registerPanel({
-    id: "powerstation-devices",
-    component: () => <PowerStationPanel client={client} initialTab="setup" />,
-  });
+  // The main panel; setup is behind the gear in its top row.
+  api.registerPanel({ id: "powerstation-controls", component: () => <PowerStationPanel client={client} /> });
+  // A small panel for the idle countdown, to dock somewhere always visible.
+  api.registerPanel({ id: "powerstation-idle", component: () => <IdlePillPanel client={client} /> });
 }

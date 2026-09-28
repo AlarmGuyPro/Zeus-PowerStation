@@ -16,7 +16,10 @@ public sealed record SceneTarget
     public double? Brightness { get; init; }
 
     [JsonIgnore]
-    public string ChannelKey => $"{(Kind == ChannelKind.Light ? "light" : "switch")}:{Index}";
+    public string ChannelKey => KeyFor(Kind, Index);
+
+    public static string KeyFor(ChannelKind kind, int index) =>
+        $"{kind switch { ChannelKind.Light => "light", ChannelKind.Meter => "emeter", _ => "switch" }}:{index}";
 }
 
 /// <summary>A named group of outputs and levels applied together.</summary>
@@ -28,10 +31,13 @@ public sealed record Scene
     /// <summary>Optional fade for dimmers, in seconds.</summary>
     public double? FadeSeconds { get; init; }
 
+    /// <summary>Safety timer (minutes) put on every output this scene turns on.</summary>
+    public int? SafetyMinutes { get; init; }
+
     public IReadOnlyList<SceneTarget> Targets { get; init; } = [];
 }
 
-public sealed record SceneRequest(string? Name, double? FadeSeconds, List<SceneTarget>? Targets);
+public sealed record SceneRequest(string? Name, double? FadeSeconds, List<SceneTarget>? Targets, int? SafetyMinutes = null);
 
 /// <summary>
 /// "apply" sets every target to its saved state. "off" turns every output in
@@ -72,6 +78,8 @@ public sealed class SceneManager
         _scenes = (await _store.LoadScenesAsync(ct).ConfigureAwait(false)).ToList();
 
     public IReadOnlyList<Scene> List() => _scenes.ToArray();
+
+    public Scene? Find(string id) => _scenes.FirstOrDefault(s => s.Id == id);
 
     public async Task<Scene> CreateAsync(SceneRequest request, CancellationToken ct)
     {
@@ -144,6 +152,8 @@ public sealed class SceneManager
         var targets = mode == "off"
             ? scene.Targets.Select(t => t with { On = false, Brightness = null }).ToArray()
             : scene.Targets.ToArray();
+        if (mode == "apply" && scene.SafetyMinutes is { } minutes)
+            _devices.SetSceneSafety(targets.Where(t => t.On), minutes);
         var (results, views) = await _devices.ApplyTargetsAsync(targets, scene.FadeSeconds, ct).ConfigureAwait(false);
         return new SceneRunResult
         {
@@ -171,6 +181,8 @@ public sealed class SceneManager
             throw new PowerStationRequestException(409, $"There's already a scene called \"{name}\".");
         if (request.FadeSeconds is < 0 or > 600)
             throw new PowerStationRequestException(400, "Fade must be between 0 and 600 seconds.");
+        if (request.SafetyMinutes is < 0 or > 1440)
+            throw new PowerStationRequestException(400, "The safety timer must be between 1 and 1,440 minutes.");
 
         var targets = request.Targets ?? [];
         if (targets.Count == 0) throw new PowerStationRequestException(400, "Pick at least one output for the scene.");
@@ -183,6 +195,7 @@ public sealed class SceneManager
             if (string.IsNullOrWhiteSpace(t.DeviceId) || !_devices.Contains(t.DeviceId))
                 throw new PowerStationRequestException(400, "The scene refers to a device that isn't in PowerStation.");
             if (t.Index is < 0 or > 15) throw new PowerStationRequestException(400, "Channel number out of range.");
+            if (t.Kind == ChannelKind.Meter) throw new PowerStationRequestException(400, "Meters can't be part of a scene.");
             if (!seen.Add($"{t.DeviceId}/{t.ChannelKey}"))
                 throw new PowerStationRequestException(400, "Each output can appear only once in a scene.");
             double? brightness = null;
@@ -204,6 +217,7 @@ public sealed class SceneManager
             Id = id,
             Name = name,
             FadeSeconds = request.FadeSeconds is > 0 ? request.FadeSeconds : null,
+            SafetyMinutes = request.SafetyMinutes is > 0 ? request.SafetyMinutes : null,
             Targets = clean,
         };
     }

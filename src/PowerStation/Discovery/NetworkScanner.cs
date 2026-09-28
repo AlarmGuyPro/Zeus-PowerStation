@@ -118,7 +118,8 @@ public sealed record FoundDevice
     public string? App { get; init; }
     public string? Name { get; init; }
     public bool AuthRequired { get; init; }
-    public bool Supported => Generation >= 2;
+    /// <summary>Gen2+ always; Gen1 when PowerStation knows the model.</summary>
+    public bool Supported => Generation >= 2 || App is not null;
     /// <summary>"mdns", "sweep" or both.</summary>
     public required IReadOnlyList<string> FoundBy { get; init; }
 }

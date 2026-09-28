@@ -8,6 +8,7 @@ import {
   type ChannelKind,
   type DeviceView,
   type PowerStationClient,
+  type Rule,
   type Scene,
   type SceneTarget,
 } from "./api";
@@ -23,6 +24,7 @@ function describe(scene: Scene) {
   const parts = [`${scene.targets.length} output${scene.targets.length === 1 ? "" : "s"}`];
   if (on && off) parts.push(`${on} on, ${off} off`);
   if (scene.fadeSeconds) parts.push(`${scene.fadeSeconds}s fade`);
+  if (scene.safetyMinutes) parts.push(`${scene.safetyMinutes} min safety timer`);
   return parts.join(" · ");
 }
 
@@ -54,8 +56,11 @@ export function ScenesStrip({ client, status }: { client: PowerStationClient; st
   }
 
   return (
-    <>
-      <div className={c("scenes")} role="group" aria-label="Scenes">
+    <section className={c("scene-box")} aria-labelledby="ps-scene-box">
+      <h3 className={c("group-label", "group-label--box")} id="ps-scene-box">
+        <SceneIcon /> Scenes
+      </h3>
+      <div className={c("scenes")}>
         {scenes.map((s) => (
           <div className={c("scene")} key={s.id}>
             <div>
@@ -85,25 +90,63 @@ export function ScenesStrip({ client, status }: { client: PowerStationClient; st
         ))}
       </div>
       {result && <Notice tone={result.tone}>{result.text}</Notice>}
-    </>
+    </section>
+  );
+}
+
+export function SceneIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
+      <rect x="1.5" y="1.5" width="5" height="5" rx="1" fill="currentColor" />
+      <rect x="9.5" y="1.5" width="5" height="5" rx="1" fill="none" stroke="currentColor" strokeWidth="1.3" />
+      <rect x="1.5" y="9.5" width="5" height="5" rx="1" fill="none" stroke="currentColor" strokeWidth="1.3" />
+      <rect x="9.5" y="9.5" width="5" height="5" rx="1" fill="currentColor" />
+    </svg>
   );
 }
 
 // ---------------------------------------------------------------- edit
 
-type Draft = { id: string | null; name: string; fadeSeconds: string; targets: Map<string, SceneTarget> };
+type Draft = {
+  id: string | null;
+  name: string;
+  fadeSeconds: string;
+  safetyMinutes: string;
+  onStart: boolean;
+  startDelay: string;
+  onStop: boolean;
+  targets: Map<string, SceneTarget>;
+};
 
-const emptyDraft = (): Draft => ({ id: null, name: "", fadeSeconds: "", targets: new Map() });
-const draftFrom = (s: Scene): Draft => ({
-  id: s.id,
-  name: s.name,
-  fadeSeconds: s.fadeSeconds ? String(s.fadeSeconds) : "",
-  targets: new Map(s.targets.map((t) => [targetKey(t), t])),
+const emptyDraft = (): Draft => ({
+  id: null, name: "", fadeSeconds: "", safetyMinutes: "", onStart: false, startDelay: "10", onStop: false, targets: new Map(),
 });
+
+/** The start/stop rules a scene owns: plain rules, created and removed from the scene editor. */
+export function sceneHooks(rules: Rule[], sceneId: string | null) {
+  const start = rules.find((r) => r.trigger.type === "zeusStart" && r.action.type === "scene" && r.action.sceneId === sceneId && r.action.mode === "apply");
+  const stop = rules.find((r) => r.trigger.type === "zeusStop" && r.action.type === "scene" && r.action.sceneId === sceneId && r.action.mode === "off");
+  return { start, stop };
+}
+
+const draftFrom = (s: Scene, rules: Rule[]): Draft => {
+  const { start, stop } = sceneHooks(rules, s.id);
+  return {
+    id: s.id,
+    name: s.name,
+    fadeSeconds: s.fadeSeconds ? String(s.fadeSeconds) : "",
+    safetyMinutes: s.safetyMinutes ? String(s.safetyMinutes) : "",
+    onStart: !!start,
+    startDelay: String(start?.delaySeconds ?? 10),
+    onStop: !!stop,
+    targets: new Map(s.targets.map((t) => [targetKey(t), t])),
+  };
+};
 
 export function ScenesSettings({ client, status }: { client: PowerStationClient; status: StatusState }) {
   const scenes = status.data?.scenes ?? [];
   const devices = status.data?.devices ?? [];
+  const rules = status.data?.rules ?? [];
   const [draft, setDraft] = useState<Draft | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -122,7 +165,7 @@ export function ScenesSettings({ client, status }: { client: PowerStationClient;
 
   return (
     <section aria-labelledby="ps-scenes-title">
-      <h3 className={c("section-title")} id="ps-scenes-title">Scenes</h3>
+      <h3 className={c("section-title")} id="ps-scenes-title" style={{ marginTop: 0 }}>Scenes</h3>
       <p className={c("hint")} style={{ margin: "0 0 8px" }}>
         A scene sets several outputs and dimmer levels in one click. Each scene also has an All off button, so it works as an
         on/off group.
@@ -134,6 +177,8 @@ export function ScenesSettings({ client, status }: { client: PowerStationClient;
             <div className={c("device-head")}>
               <h4 className={c("device-name")}>{s.name}</h4>
               <span className={c("device-meta")}>{describe(s)}</span>
+              {sceneHooks(rules, s.id).start && <span className={c("badge", "badge--muted")}>On start</span>}
+              {sceneHooks(rules, s.id).stop && <span className={c("badge", "badge--muted")}>Off at stop</span>}
               <span style={{ marginLeft: "auto" }} className={c("row")}>
                 {confirmDelete === s.id ? (
                   <>
@@ -146,7 +191,7 @@ export function ScenesSettings({ client, status }: { client: PowerStationClient;
                   </>
                 ) : (
                   <>
-                    <button type="button" className={c("button", "button--small")} onClick={() => setDraft(draftFrom(s))}>
+                    <button type="button" className={c("button", "button--small")} onClick={() => setDraft(draftFrom(s, rules))}>
                       Edit
                     </button>
                     <button type="button" className={c("button", "button--small")} onClick={() => setConfirmDelete(s.id)}>
@@ -163,10 +208,12 @@ export function ScenesSettings({ client, status }: { client: PowerStationClient;
         <SceneEditor
           draft={draft}
           devices={devices}
+          rules={rules}
           client={client}
           onCancel={() => setDraft(null)}
           onSaved={(scene) => {
             status.upsertScene(scene);
+            status.reload();
             setDraft(null);
           }}
         />
@@ -185,12 +232,14 @@ export function ScenesSettings({ client, status }: { client: PowerStationClient;
 function SceneEditor({
   draft: initial,
   devices,
+  rules,
   client,
   onCancel,
   onSaved,
 }: {
   draft: Draft;
   devices: DeviceView[];
+  rules: Rule[];
   client: PowerStationClient;
   onCancel: () => void;
   onSaved: (s: Scene) => void;
@@ -212,7 +261,7 @@ function SceneEditor({
     update((targets) => {
       targets.clear();
       for (const d of devices)
-        for (const ch of d.status.channels)
+        for (const ch of d.status.channels.filter((x) => x.kind !== "Meter"))
           targets.set(targetKey({ deviceId: d.deviceId, kind: ch.kind, index: ch.index }), {
             deviceId: d.deviceId,
             kind: ch.kind,
@@ -226,10 +275,33 @@ function SceneEditor({
   async function save() {
     setBusy(true);
     setError(null);
-    const fade = draft.fadeSeconds.trim() === "" ? null : Number(draft.fadeSeconds);
-    const body = { name: draft.name, fadeSeconds: fade, targets: [...draft.targets.values()] };
+    const num = (v: string) => (v.trim() === "" ? null : Number(v));
+    const body = {
+      name: draft.name,
+      fadeSeconds: num(draft.fadeSeconds),
+      safetyMinutes: num(draft.safetyMinutes),
+      targets: [...draft.targets.values()],
+    };
     try {
-      onSaved(draft.id ? await client.updateScene(draft.id, body) : await client.createScene(body));
+      const scene = draft.id ? await client.updateScene(draft.id, body) : await client.createScene(body);
+      // Start/stop hooks are ordinary rules; add or remove them to match the ticks.
+      const { start, stop } = sceneHooks(rules, scene.id);
+      const delay = Math.max(0, Number(draft.startDelay) || 0);
+      if (draft.onStart) {
+        const rule = {
+          name: `${scene.name} when Zeus starts`, enabled: true, trigger: { type: "zeusStart" as const },
+          action: { type: "scene" as const, sceneId: scene.id, mode: "apply" as const }, delaySeconds: delay,
+        };
+        if (start) await client.updateRule(start.id, { ...rule, enabled: start.enabled });
+        else await client.createRule(rule);
+      } else if (start) await client.deleteRule(start.id);
+      if (draft.onStop && !stop)
+        await client.createRule({
+          name: `${scene.name} off when Zeus stops`, enabled: true, trigger: { type: "zeusStop" },
+          action: { type: "scene", sceneId: scene.id, mode: "off" },
+        });
+      else if (!draft.onStop && stop) await client.deleteRule(stop.id);
+      onSaved(scene);
     } catch (err) {
       setError(message(err));
     } finally {
@@ -273,8 +345,73 @@ function SceneEditor({
               setDraft((d) => ({ ...d, fadeSeconds }));
             }}
           />
+          <span className={c("hint")}>Dimmers ramp to their level over this time.</span>
+        </div>
+        <div className={c("field")}>
+          <label htmlFor={`${ids}-safety`}>Safety timer (minutes, optional)</label>
+          <input
+            id={`${ids}-safety`}
+            type="number"
+            min={1}
+            max={1440}
+            value={draft.safetyMinutes}
+            placeholder="None"
+            onChange={(e) => {
+              const safetyMinutes = e.currentTarget.value;
+              setDraft((d) => ({ ...d, safetyMinutes }));
+            }}
+          />
+          <span className={c("hint")}>
+            Outputs this scene turns on switch themselves off this long after Zeus stops or crashes.
+          </span>
         </div>
       </div>
+
+      <fieldset className={c("fieldset")}>
+        <legend>Run automatically</legend>
+        <div className={c("row")}>
+          <label className={c("check")}>
+            <input
+              type="checkbox"
+              checked={draft.onStart}
+              onChange={(e) => {
+                const onStart = e.currentTarget.checked;
+                setDraft((d) => ({ ...d, onStart }));
+              }}
+            />
+            <span>Apply when Zeus starts, after</span>
+          </label>
+          <input
+            className={c("inline-num")}
+            type="number"
+            min={0}
+            max={600}
+            aria-label="Seconds after Zeus starts"
+            value={draft.startDelay}
+            disabled={!draft.onStart}
+            onChange={(e) => {
+              const startDelay = e.currentTarget.value;
+              setDraft((d) => ({ ...d, startDelay }));
+            }}
+          />
+          <span className={c("pick-unit")}>seconds</span>
+        </div>
+        <label className={c("check")}>
+          <input
+            type="checkbox"
+            checked={draft.onStop}
+            onChange={(e) => {
+              const onStop = e.currentTarget.checked;
+              setDraft((d) => ({ ...d, onStop }));
+            }}
+          />
+          <span>All off when Zeus closes normally</span>
+        </label>
+        <span className={c("hint")}>
+          Closing is only seen when Zeus shuts down cleanly. For a crash or power cut, use the safety timer above.
+          These appear in Automations as ordinary rules.
+        </span>
+      </fieldset>
 
       <div className={c("row")}>
         <span className={c("hint")}>Tick the outputs this scene controls and choose what each should do.</span>
@@ -284,10 +421,10 @@ function SceneEditor({
       </div>
 
       {devices.map((d) =>
-        d.status.channels.length === 0 ? null : (
+        d.status.channels.every((x) => x.kind === "Meter") ? null : (
           <div className={c("pick-device")} key={d.deviceId}>
             <p className={c("pick-device-name")}>{d.displayName}</p>
-            {d.status.channels.map((ch) => {
+            {d.status.channels.filter((x) => x.kind !== "Meter").map((ch) => {
               const key = targetKey({ deviceId: d.deviceId, kind: ch.kind, index: ch.index });
               const t = draft.targets.get(key);
               const label = channelLabel(ch);

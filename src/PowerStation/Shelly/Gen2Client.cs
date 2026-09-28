@@ -16,6 +16,13 @@ public interface IShellyClient
     Task ToggleAsync(ChannelKind kind, int index, CancellationToken ct);
     Task SetLightAsync(int index, bool? on, double? brightness, double? transitionSeconds, CancellationToken ct);
     Task DimAsync(int index, DimDirection direction, CancellationToken ct);
+
+    /// <summary>
+    /// Turns the output on (or keeps it on) with a device-side flip-back timer:
+    /// the device itself switches it off after <paramref name="seconds"/>
+    /// unless this is called again first.
+    /// </summary>
+    Task SetSafetyTimerAsync(ChannelKind kind, int index, int seconds, CancellationToken ct);
 }
 
 public enum DimDirection { Up, Down, Stop }
@@ -109,6 +116,7 @@ public sealed class Gen2Client : IShellyClient
                 DeviceId = mac is null ? type.ToLowerInvariant() : $"{type.ToLowerInvariant()}-{mac.ToLowerInvariant()}",
                 Generation = 1,
                 Model = type,
+                App = Gen1Client.AppFor(type),
                 Mac = mac,
                 Firmware = GetString(info, "fw"),
                 AuthRequired = GetBool(info, "auth") ?? false,
@@ -190,6 +198,10 @@ public sealed class Gen2Client : IShellyClient
         if (transitionSeconds is > 0) p["transition_duration"] = transitionSeconds.Value;
         return CallTaggedAsync("Light.Set", p, ct);
     }
+
+    public Task SetSafetyTimerAsync(ChannelKind kind, int index, int seconds, CancellationToken ct) =>
+        CallTaggedAsync(kind == ChannelKind.Light ? "Light.Set" : "Switch.Set",
+            new JsonObject { ["id"] = index, ["on"] = true, ["toggle_after"] = Math.Max(1, seconds) }, ct);
 
     public Task DimAsync(int index, DimDirection direction, CancellationToken ct) =>
         CallAsync(direction switch
@@ -367,6 +379,9 @@ public sealed class Gen2Client : IShellyClient
                 Source = GetString(c, "source"),
                 Errors = GetStrings(c, "errors"),
                 Flags = GetStrings(c, "flags"),
+                TimerEndsAt = GetDouble(c, "timer_started_at") is { } started && GetDouble(c, "timer_duration") is { } duration
+                    ? DateTimeOffset.FromUnixTimeMilliseconds((long)((started + duration) * 1000))
+                    : null,
             });
         }
         channels.Sort((a, b) =>
@@ -389,13 +404,13 @@ public sealed class Gen2Client : IShellyClient
         return names;
     }
 
-    private static string? GetString(JsonObject o, string key) =>
+    internal static string? GetString(JsonObject o, string key) =>
         o[key] is JsonValue v && v.TryGetValue<string>(out var s) ? s : null;
 
-    private static bool? GetBool(JsonObject o, string key) =>
+    internal static bool? GetBool(JsonObject o, string key) =>
         o[key] is JsonValue v && v.TryGetValue<bool>(out var b) ? b : null;
 
-    private static int? GetInt(JsonObject o, string key)
+    internal static int? GetInt(JsonObject o, string key)
     {
         if (o[key] is not JsonValue v) return null;
         if (v.TryGetValue<int>(out var i)) return i;
@@ -403,7 +418,7 @@ public sealed class Gen2Client : IShellyClient
         return null;
     }
 
-    private static double? GetDouble(JsonObject o, string key)
+    internal static double? GetDouble(JsonObject o, string key)
     {
         if (o[key] is not JsonValue v) return null;
         if (v.TryGetValue<double>(out var d)) return d;
@@ -412,7 +427,7 @@ public sealed class Gen2Client : IShellyClient
         return null;
     }
 
-    private static IReadOnlyList<string> GetStrings(JsonObject o, string key) =>
+    internal static IReadOnlyList<string> GetStrings(JsonObject o, string key) =>
         o[key] is JsonArray a
             ? a.Select(x => x is JsonValue v && v.TryGetValue<string>(out var s) ? s : null)
                .Where(s => s is not null).Cast<string>().ToArray()
@@ -424,7 +439,7 @@ public sealed class Gen2Client : IShellyClient
         ex is System.Net.Sockets.SocketException ||
         ex is IOException;
 
-    private static ShellyException Unreachable(string host, Exception ex) =>
+    internal static ShellyException Unreachable(string host, Exception ex) =>
         new(ShellyErrorKind.Unreachable,
             ex is TaskCanceledException
                 ? $"{host} didn't answer in time. Check the address and that this computer can reach that network."
