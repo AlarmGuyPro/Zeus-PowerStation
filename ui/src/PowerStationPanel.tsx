@@ -16,6 +16,7 @@ const SECTIONS: { id: SetupSection; label: string }[] = [
   { id: "automations", label: "Automations" },
   { id: "readings", label: "Readings" },
   { id: "layout", label: "Layout" },
+  { id: "debug", label: "Debug" },
 ];
 
 export function GearIcon() {

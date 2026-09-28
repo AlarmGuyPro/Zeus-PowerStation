@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.alarmguypro.powerstation",
   "name": "PowerStation",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "author": "KQ4WLR",
   "description": "Control and monitor Shelly relays, plugs, dimmers, colour LED controllers and energy meters (Gen1 to Gen4) on your LAN from Zeus: scenes, rules on Zeus start/close, band, frequency, TX and idle time, safety timers, and voltage and current ranges.",
   "homepage": "https://github.com/AlarmGuyPro/zeus-powerstation",

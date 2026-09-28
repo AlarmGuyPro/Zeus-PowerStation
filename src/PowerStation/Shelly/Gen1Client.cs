@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using KQ4WLR.PowerStation.Model;
+using KQ4WLR.PowerStation.Services;
 using static KQ4WLR.PowerStation.Shelly.Gen2Client;
 
 namespace KQ4WLR.PowerStation.Shelly;
@@ -25,10 +26,15 @@ public sealed class Gen1Client : IShellyClient
     private Dictionary<string, string> _names = new();
     private DateTimeOffset _namesFetchedAt = DateTimeOffset.MinValue;
 
-    public Gen1Client(HttpClient http, string host, string? user, string? password)
+    private readonly TrafficLog? _log;
+    private readonly string? _deviceId;
+
+    public Gen1Client(HttpClient http, string host, string? user, string? password, TrafficLog? log = null, string? deviceId = null)
     {
         _http = http;
         _host = host;
+        _log = log;
+        _deviceId = deviceId;
         if (!string.IsNullOrEmpty(password))
             _auth = new AuthenticationHeaderValue("Basic",
                 Convert.ToBase64String(Encoding.UTF8.GetBytes($"{(string.IsNullOrEmpty(user) ? "admin" : user)}:{password}")));
@@ -54,9 +60,9 @@ public sealed class Gen1Client : IShellyClient
     };
 
     /// <summary>Checks the credentials against the device. Throws Unauthorized if they're wrong.</summary>
-    public static async Task VerifyAsync(HttpClient http, string host, string? user, string password, CancellationToken ct)
+    public static async Task VerifyAsync(HttpClient http, string host, string? user, string password, CancellationToken ct, TrafficLog? log = null)
     {
-        var client = new Gen1Client(http, host, user, password);
+        var client = new Gen1Client(http, host, user, password, log);
         await client.GetJsonAsync("/settings", ct).ConfigureAwait(false);
     }
 
@@ -113,6 +119,29 @@ public sealed class Gen1Client : IShellyClient
 
     internal async Task<JsonObject> GetJsonAsync(string pathAndQuery, CancellationToken ct)
     {
+        if (_log is null) return await GetJsonCoreAsync(pathAndQuery, ct, (_, _) => { }).ConfigureAwait(false);
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        int? status = null;
+        string? body = null;
+        var path = pathAndQuery.Split('?')[0];
+        var query = pathAndQuery.Contains('?') ? pathAndQuery[(pathAndQuery.IndexOf('?') + 1)..] : null;
+        try
+        {
+            var result = await GetJsonCoreAsync(pathAndQuery, ct, (s, b) => { status = s; body = b; }).ConfigureAwait(false);
+            _log.Add("http", _deviceId, _host, path, query, status, body, null, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            return result;
+        }
+        catch (Exception ex) when (!(ex is OperationCanceledException && ct.IsCancellationRequested))
+        {
+            _log.Add("http", _deviceId, _host, path, query, status, body,
+                $"{(ex is ShellyException se ? se.Kind.ToString() : ex.GetType().Name)}: {ex.Message}",
+                System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            throw;
+        }
+    }
+
+    private async Task<JsonObject> GetJsonCoreAsync(string pathAndQuery, CancellationToken ct, Action<int, string?> seen)
+    {
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
@@ -123,11 +152,13 @@ public sealed class Gen1Client : IShellyClient
             catch (Exception ex) when (IsNetworkFailure(ex, ct)) { throw Unreachable(_host, ex); }
             using (response)
             {
+                seen((int)response.StatusCode, null);
                 if (response.StatusCode == HttpStatusCode.Unauthorized)
                     throw new ShellyException(ShellyErrorKind.Unauthorized, _auth is null
                         ? "This device has a password set. Enter it in PowerStation setup."
                         : "The device rejected the saved user name or password.");
                 var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                seen((int)response.StatusCode, body);
                 if (!response.IsSuccessStatusCode)
                     throw new ShellyException(ShellyErrorKind.DeviceError,
                         $"{pathAndQuery.Split('?')[0]}: device answered HTTP {(int)response.StatusCode}{(body.Length is > 0 and < 200 ? $" ({body.Trim()})" : "")}.");

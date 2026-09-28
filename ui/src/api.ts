@@ -273,6 +273,31 @@ export interface ProbeResponse {
   supported: boolean;
 }
 
+export interface TrafficEntry {
+  seq: number;
+  at: string;
+  kind: "rpc" | "http" | "event";
+  deviceId?: string | null;
+  deviceName?: string | null;
+  host?: string | null;
+  method: string;
+  request?: string | null;
+  status?: number | null;
+  response?: string | null;
+  error?: string | null;
+  ms?: number | null;
+  routine: boolean;
+  ok: boolean;
+}
+
+export interface TrafficView {
+  recordAll: boolean;
+  recordAllUntil?: string | null;
+  latest: number;
+  total: number;
+  entries: TrafficEntry[];
+}
+
 export interface ChannelCommand {
   action: "on" | "off" | "toggle" | "brightness" | "dim" | "color";
   brightness?: number;
@@ -352,6 +377,10 @@ export function createClient(api: ZeusPluginApi) {
     extendIdle: () => call<AutomationState>("POST", "/automation/extend"),
     saveReadings: (patch: { mains?: MainsProfile; holdSeconds?: number }) => call<ReadingsView>("PUT", "/readings", patch),
     clearReadingEvents: () => call<ReadingsView>("DELETE", "/readings/events"),
+    debugLog: (since: number) => call<TrafficView>("GET", `/debug/log?since=${since}&max=1000`),
+    setDebug: (patch: { recordAll?: boolean }) =>
+      call<{ recordAll: boolean; recordAllUntil?: string | null }>("PUT", "/debug", patch),
+    clearDebugLog: () => call<{ cleared: boolean }>("DELETE", "/debug/log"),
     status: () => call<StatusResponse>("GET", "/status"),
     probe: (host: string) => call<ProbeResponse>("POST", "/devices/probe", { host }),
     addDevice: (host: string, name?: string, password?: string, username?: string) =>

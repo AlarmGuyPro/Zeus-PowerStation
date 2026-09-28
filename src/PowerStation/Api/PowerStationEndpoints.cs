@@ -22,6 +22,29 @@ internal static class PowerStationEndpoints
         AutomationService Auto() => automations() ?? throw new PowerStationRequestException(503, "PowerStation is still starting.");
         ReadingsService Read() => readings() ?? throw new PowerStationRequestException(503, "PowerStation is still starting.");
 
+        endpoints.MapGet("debug/log", (Handler)((HttpContext http) => Run(http, manager, (m, _) =>
+        {
+            var q = http.Request.Query;
+            long? since = long.TryParse(q["since"], out var sn) ? sn : null;
+            var device = q.ContainsKey("device") ? q["device"].ToString() : null;
+            var query = new TrafficQuery(since, device, q["errors"] == "1", q["hideRoutine"] == "1", q["text"],
+                int.TryParse(q["max"], out var max) ? max : 300);
+            return Task.FromResult<object?>(m.Traffic.Query(query, id => id is null ? null : m.Contains(id) ? m.DisplayName(id) : id));
+        })));
+
+        endpoints.MapPut("debug", (Handler)((HttpContext http) => Run(http, manager, async (m, ct) =>
+        {
+            var body = await ReadAsync<DebugRequest>(http, ct).ConfigureAwait(false);
+            if (body.RecordAll is { } all) m.Traffic.SetRecordAll(all);
+            return new { recordAll = m.Traffic.RecordAll, recordAllUntil = m.Traffic.RecordAllUntil };
+        })));
+
+        endpoints.MapDelete("debug/log", (Handler)((HttpContext http) => Run(http, manager, (m, _) =>
+        {
+            m.Traffic.Clear();
+            return Task.FromResult<object?>(new { cleared = true });
+        })));
+
         endpoints.MapPost("rules", (Handler)((HttpContext http) => Run(http, manager, async (_, ct) =>
         {
             var body = await ReadAsync<RuleRequest>(http, ct).ConfigureAwait(false);
@@ -189,6 +212,7 @@ internal static class PowerStationEndpoints
     private delegate Task<IResult> Handler(HttpContext http);
 
     private sealed record ProbeRequest(string? Host);
+    private sealed record DebugRequest(bool? RecordAll);
 
     private static DiscoveryService Discovery(Func<DiscoveryService?> get) =>
         get() ?? throw new PowerStationRequestException(503, "PowerStation is still starting.");
@@ -222,6 +246,16 @@ internal static class PowerStationEndpoints
         catch (JsonException)
         {
             return Error(400, "request", "The request body wasn't valid JSON.");
+        }
+        catch (OperationCanceledException) when (http.RequestAborted.IsCancellationRequested)
+        {
+            return Error(499, "cancelled", "The request was cancelled.");
+        }
+        catch (Exception ex)
+        {
+            // Unexpected: say what it was, so it can be reported, and keep it in the debug log.
+            manager.Traffic.Event(null, $"{http.Request.Method} {http.Request.Path}", $"{ex.GetType().Name}: {ex.Message}");
+            return Error(500, "internal", $"PowerStation hit an unexpected error ({ex.GetType().Name}: {ex.Message}). Setup › Debug has the details.");
         }
     }
 
