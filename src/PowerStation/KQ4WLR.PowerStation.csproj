@@ -1,0 +1,22 @@
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>KQ4WLR.PowerStation</AssemblyName>
+    <RootNamespace>KQ4WLR.PowerStation</RootNamespace>
+    <Version>0.1.0</Version>
+    <IsPackable>false</IsPackable>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../../sdk/Openhpsdr.Zeus.Plugins.Contracts/Zeus.Plugins.Contracts.csproj"
+                      Private="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="PowerStation.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="plugin.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

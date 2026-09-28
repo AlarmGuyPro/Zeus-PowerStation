@@ -1,0 +1,34 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<!-- Local preview only. Token values below are stand-ins for the Zeus theme so
+     the panels can be viewed outside Zeus; the plugin itself never sets them. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>PowerStation preview</title>
+  <style>
+    :root[data-theme="dark"] {
+      --bg-0: #0b0d10; --bg-1: #12151a; --bg-2: #181c22; --bg-3: #20262e; --bg-inset: #0e1115;
+      --fg-0: #f2f4f7; --fg-1: #d5d9e0; --fg-2: #a3aab5; --fg-3: #767e8a;
+      --line: #262c35; --line-strong: #39414c; --panel-border: #2a313a; --panel-top: #1b2027; --panel-bot: #14181d;
+      --accent: #3d8bfd; --accent-bright: #6ea8ff; --ok: #3fb96b; --amber: #e0a526; --tx: #ef4b4b;
+    }
+    :root[data-theme="light"] {
+      --bg-0: #ffffff; --bg-1: #f7f8fa; --bg-2: #eef0f3; --bg-3: #e3e7ec; --bg-inset: #ffffff;
+      --fg-0: #0d1117; --fg-1: #24292f; --fg-2: #57606a; --fg-3: #7d858f;
+      --line: #d8dde3; --line-strong: #b9c1ca; --panel-border: #cfd6de; --panel-top: #f3f5f7; --panel-bot: #e9ecef;
+      --accent: #1f6feb; --accent-bright: #0b5bd3; --ok: #1a7f37; --amber: #9a6700; --tx: #cf222e;
+    }
+    :root {
+      --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif; --font-mono: ui-monospace, "DejaVu Sans Mono", monospace;
+      --r-xs: 3px; --r-sm: 5px; --r-md: 8px; --r-lg: 12px; --dur-fast: 120ms; --dur-med: 200ms; --ease-out: cubic-bezier(.2,.8,.2,1);
+    }
+    html, body { margin: 0; background: var(--bg-0); }
+    #root { width: var(--w, 640px); height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="./dist/preview.js"></script>
+</body>
+</html>

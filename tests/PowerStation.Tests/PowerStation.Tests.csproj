@@ -1,0 +1,19 @@
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<!--
+  Dependency-free test runner: dotnet run (project: tests/PowerStation.Tests).
+  Uses only the .NET and ASP.NET Core shared frameworks so it builds offline
+  and runs identically on every CI runner. Exit code is the failure count.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>PowerStation.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../../src/PowerStation/KQ4WLR.PowerStation.csproj" />
+    <ProjectReference Include="../../sdk/Openhpsdr.Zeus.Plugins.Contracts/Zeus.Plugins.Contracts.csproj" />
+  </ItemGroup>
+</Project>

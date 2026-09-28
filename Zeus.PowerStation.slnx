@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/sdk/">
+    <Project Path="sdk/Openhpsdr.Zeus.Plugins.Contracts/Zeus.Plugins.Contracts.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/PowerStation/KQ4WLR.PowerStation.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PowerStation.Tests/PowerStation.Tests.csproj" />
+  </Folder>
+</Solution>

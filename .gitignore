@@ -1,0 +1,13 @@
+artifacts/
+bin/
+obj/
+node_modules/
+*.user
+*.suo
+.DS_Store
+Thumbs.db
+.vs/
+.idea/
+# Built from ui/ by `npm run build`; never hand-edited.
+src/PowerStation/ui/
+ui/preview/dist/

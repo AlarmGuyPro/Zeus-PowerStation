@@ -1,0 +1,256 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+using System.Collections.Concurrent;
+using System.Net;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+
+namespace PowerStation.Tests;
+
+/// <summary>
+/// In-process imitation of a Shelly Gen2+ device (e.g. Pro 4PM, Dimmer Gen3):
+/// serves /shelly and JSON-RPC at /rpc, including SHA-256 digest auth with
+/// nonce reuse and replay protection. Its digest check is written
+/// independently of the plugin's so the two can't share a bug.
+/// </summary>
+public sealed class FakeShellyGen2 : IAsyncDisposable
+{
+    private readonly WebApplication _app;
+    private readonly ConcurrentDictionary<string, int> _nonces = new();
+    private readonly object _lock = new();
+
+    public string DeviceId { get; }
+    public string Model { get; init; } = "SPSW-104PE16EU";
+    public string? Password { get; set; }
+    public bool RejectTag { get; set; }
+    public int Gen { get; init; } = 2;
+    public List<FakeSwitch> Switches { get; } = [];
+    public List<FakeLight> Lights { get; } = [];
+    public List<JsonObject> Calls { get; } = [];
+    public int ChallengesIssued { get; private set; }
+    public string Host { get; private set; } = "";
+
+    public sealed class FakeSwitch
+    {
+        public bool On;
+        public string? Name;
+        public double? Power = 42.5, Voltage = 121.3, Current = 0.35;
+    }
+
+    public sealed class FakeLight
+    {
+        public bool On;
+        public double Brightness = 50;
+        public string? Name;
+    }
+
+    private FakeShellyGen2(string deviceId, WebApplication app)
+    {
+        DeviceId = deviceId;
+        _app = app;
+    }
+
+    public static async Task<FakeShellyGen2> StartAsync(string deviceId = "shellypro4pm-aabbccddeeff", Action<FakeShellyGen2>? configure = null, int gen = 2)
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Logging.ClearProviders();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        var app = builder.Build();
+        var fake = new FakeShellyGen2(deviceId, app) { Gen = gen };
+        configure?.Invoke(fake);
+
+        app.MapGet("/shelly", fake.HandleShelly);
+        app.MapPost("/rpc", fake.HandleRpc);
+        await app.StartAsync();
+        var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
+        fake.Host = new Uri(address).Authority;
+        return fake;
+    }
+
+    /// <summary>Forget all issued nonces, as a rebooted device or expired nonce would.</summary>
+    public void ExpireNonces() => _nonces.Clear();
+
+    private IResult HandleShelly()
+    {
+        if (Gen == 1)
+            return Results.Json(new JsonObject
+            {
+                ["type"] = "SHPLG-S", ["mac"] = "AABBCCDDEEFF", ["auth"] = Password is not null, ["fw"] = "20230913-114008/v1.14.0",
+            });
+        return Results.Json(new JsonObject
+        {
+            ["name"] = "Shack Rack", ["id"] = DeviceId, ["mac"] = "AABBCCDDEEFF", ["model"] = Model,
+            ["gen"] = Gen, ["fw_id"] = "20250101-000000/1.5.0-g0000000", ["ver"] = "1.5.0",
+            ["app"] = "Pro4PM", ["auth_en"] = Password is not null, ["auth_domain"] = Password is null ? null : DeviceId,
+        });
+    }
+
+    private async Task HandleRpc(HttpContext http)
+    {
+        var body = await new StreamReader(http.Request.Body).ReadToEndAsync();
+        var frame = JsonNode.Parse(body)!.AsObject();
+        lock (_lock) Calls.Add(frame);
+
+        if (Password is not null && !IsAuthorized(http.Request.Headers.Authorization.ToString(), out var stale))
+        {
+            var nonce = Convert.ToBase64String(RandomNumberGenerator.GetBytes(12));
+            _nonces[nonce] = 0;
+            ChallengesIssued++;
+            http.Response.StatusCode = 401;
+            http.Response.Headers.WWWAuthenticate =
+                $"Digest qop=\"auth\", realm=\"{DeviceId}\", nonce=\"{nonce}\", algorithm=SHA-256" + (stale ? ", stale=true" : "");
+            return;
+        }
+
+        var id = frame["id"]?.GetValue<int>() ?? 0;
+        var method = frame["method"]!.GetValue<string>();
+        var p = frame["params"] as JsonObject ?? new JsonObject();
+        JsonNode? result;
+        try
+        {
+            result = Dispatch(method, p);
+        }
+        catch (RpcError e)
+        {
+            http.Response.StatusCode = 500;
+            await http.Response.WriteAsJsonAsync(new JsonObject
+            {
+                ["id"] = id, ["src"] = DeviceId,
+                ["error"] = new JsonObject { ["code"] = e.Code, ["message"] = e.Message },
+            });
+            return;
+        }
+        await http.Response.WriteAsJsonAsync(new JsonObject { ["id"] = id, ["src"] = DeviceId, ["result"] = result });
+    }
+
+    private sealed class RpcError(int code, string message) : Exception(message)
+    {
+        public int Code { get; } = code;
+    }
+
+    private JsonNode? Dispatch(string method, JsonObject p)
+    {
+        if (RejectTag && p.ContainsKey("tag")) throw new RpcError(-103, "Invalid argument 'tag'!");
+        int Id() => p["id"]?.GetValue<int>() ?? throw new RpcError(-103, "Missing required argument 'id'!");
+        lock (_lock)
+        {
+            switch (method)
+            {
+                case "Shelly.GetDeviceInfo":
+                    return new JsonObject { ["id"] = DeviceId, ["gen"] = Gen };
+                case "Sys.GetStatus":
+                    return new JsonObject { ["uptime"] = 1234 };
+                case "Shelly.GetConfig":
+                {
+                    var cfg = new JsonObject();
+                    for (var i = 0; i < Switches.Count; i++) cfg[$"switch:{i}"] = new JsonObject { ["id"] = i, ["name"] = Switches[i].Name };
+                    for (var i = 0; i < Lights.Count; i++) cfg[$"light:{i}"] = new JsonObject { ["id"] = i, ["name"] = Lights[i].Name };
+                    return cfg;
+                }
+                case "Shelly.GetStatus":
+                {
+                    var st = new JsonObject { ["sys"] = new JsonObject { ["uptime"] = 1234 } };
+                    for (var i = 0; i < Switches.Count; i++)
+                    {
+                        var s = Switches[i];
+                        st[$"switch:{i}"] = new JsonObject
+                        {
+                            ["id"] = i, ["source"] = "WS_in", ["output"] = s.On,
+                            ["apower"] = s.On ? s.Power : 0, ["voltage"] = s.Voltage, ["current"] = s.On ? s.Current : 0,
+                            ["pf"] = 0.97, ["freq"] = 60.0,
+                            ["aenergy"] = new JsonObject { ["total"] = 1234.5 },
+                            ["temperature"] = new JsonObject { ["tC"] = 41.2, ["tF"] = 106.2 },
+                        };
+                    }
+                    for (var i = 0; i < Lights.Count; i++)
+                    {
+                        st[$"light:{i}"] = new JsonObject
+                        {
+                            ["id"] = i, ["source"] = "WS_in", ["output"] = Lights[i].On, ["brightness"] = Lights[i].Brightness,
+                        };
+                    }
+                    return st;
+                }
+                case "Switch.Set":
+                {
+                    var s = Switch(Id());
+                    var was = s.On;
+                    s.On = p["on"]!.GetValue<bool>();
+                    return new JsonObject { ["was_on"] = was };
+                }
+                case "Switch.Toggle":
+                {
+                    var s = Switch(Id());
+                    var was = s.On;
+                    s.On = !s.On;
+                    return new JsonObject { ["was_on"] = was };
+                }
+                case "Light.Set":
+                {
+                    var l = Light(Id());
+                    if (p["on"] is JsonValue on) l.On = on.GetValue<bool>();
+                    if (p["brightness"] is JsonValue b) l.Brightness = b.GetValue<double>();
+                    return null;
+                }
+                case "Light.Toggle":
+                    Light(Id()).On ^= true;
+                    return null;
+                case "Light.DimUp":
+                    Light(Id()).Brightness = Math.Min(100, Light(Id()).Brightness + 10);
+                    return null;
+                case "Light.DimDown":
+                    Light(Id()).Brightness = Math.Max(1, Light(Id()).Brightness - 10);
+                    return null;
+                case "Light.DimStop":
+                    Light(Id());
+                    return null;
+                default:
+                    throw new RpcError(-114, $"Method {method} failed: No such method!");
+            }
+        }
+    }
+
+    private FakeSwitch Switch(int id) => id >= 0 && id < Switches.Count ? Switches[id] : throw new RpcError(-105, $"Argument 'id', value {id} not found!");
+    private FakeLight Light(int id) => id >= 0 && id < Lights.Count ? Lights[id] : throw new RpcError(-105, $"Argument 'id', value {id} not found!");
+
+    private bool IsAuthorized(string header, out bool stale)
+    {
+        stale = false;
+        if (!header.StartsWith("Digest ", StringComparison.Ordinal)) return false;
+        var f = new Dictionary<string, string>();
+        foreach (var part in header[7..].Split(','))
+        {
+            var kv = part.Trim().Split('=', 2);
+            if (kv.Length == 2) f[kv[0]] = kv[1].Trim('"');
+        }
+        if (!f.TryGetValue("nonce", out var nonce) || !_nonces.TryGetValue(nonce, out var lastNc))
+        {
+            stale = f.ContainsKey("nonce");
+            return false;
+        }
+        if (f.GetValueOrDefault("username") != "admin" || f.GetValueOrDefault("realm") != DeviceId ||
+            f.GetValueOrDefault("algorithm") != "SHA-256" || f.GetValueOrDefault("qop") != "auth") return false;
+        var nc = Convert.ToInt32(f["nc"], 16);
+        if (nc <= lastNc) return false; // replay protection, as firmware 2.0+ does
+        static string H(string s) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(s)));
+        var ha1 = H($"admin:{DeviceId}:{Password}");
+        var ha2 = H($"POST:{f["uri"]}");
+        var expected = H($"{ha1}:{nonce}:{f["nc"]}:{f["cnonce"]}:auth:{ha2}");
+        if (!CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(expected), Encoding.ASCII.GetBytes(f["response"]))) return false;
+        _nonces[nonce] = nc;
+        return true;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _app.StopAsync();
+        await _app.DisposeAsync();
+    }
+}
