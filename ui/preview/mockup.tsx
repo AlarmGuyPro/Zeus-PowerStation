@@ -165,7 +165,7 @@ const api: ZeusPluginApi = {
     await new Promise((r) => setTimeout(r, 180));
     if (state.scenario === "down") throw new TypeError("Failed to fetch");
     const devices = state.devices;
-    if (method === "GET" && path === "/status") return json({ version: "0.4.1", pollIntervalMs: 2000, devices: clone(devices), scenes: clone(state.scenes), layout: state.scenario === "empty" ? null : clone(state.layout) });
+    if (method === "GET" && path === "/status") return json({ version: "0.4.2", pollIntervalMs: 2000, devices: clone(devices), scenes: clone(state.scenes), layout: state.scenario === "empty" ? null : clone(state.layout) });
     if (path === "/layout" && method === "PUT") {
       state.layout = { columns: body.columns, order: body.order };
       return json(state.layout);

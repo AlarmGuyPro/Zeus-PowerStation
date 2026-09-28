@@ -92,7 +92,7 @@ function DeviceCard({
     <article className={c("device")} aria-labelledby={`ps-${device.deviceId}`}>
       <div className={c("device-head")}>
         {arranging && <span className={c("grip")} aria-hidden="true">⠿</span>}
-        <h3 className={c("device-name")} id={`ps-${device.deviceId}`}>
+        <h3 className={c("device-name")} id={`ps-${device.deviceId}`} title={device.displayName}>
           {device.displayName}
         </h3>
         <span className={c("device-meta")}>{device.app ?? device.model ?? ""}</span>

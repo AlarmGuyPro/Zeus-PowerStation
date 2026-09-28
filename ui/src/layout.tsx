@@ -4,13 +4,20 @@
 // Zeus restarts.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { DeviceView, Layout, PowerStationClient } from "./api";
-import { Notice } from "./shared";
 import { c } from "./styles";
 
 export const COLUMN_CHOICES = [0, 1, 2, 3, 4] as const;
 /** Narrowest a column may get before the grid drops a column. */
-const MIN_COLUMN_PX = 230;
+/** Auto uses roomy cards; a column count the operator picks is kept down to narrow cards. */
+const AUTO_COLUMN_PX = 220;
+const MIN_COLUMN_PX = 150;
 const GAP_PX = 10;
+
+/** How many columns the grid actually shows for a chosen count at a given width. */
+export function columnsFor(chosen: number, width: number, devices: number) {
+  const fit = (min: number) => (width > 0 ? Math.max(1, Math.floor((width + GAP_PX) / (min + GAP_PX))) : chosen || 3);
+  return chosen === 0 ? Math.max(1, Math.min(fit(AUTO_COLUMN_PX), devices)) : Math.min(chosen, fit(MIN_COLUMN_PX));
+}
 
 /**
  * Fits saved order to the devices that exist now: unknown IDs are dropped
@@ -152,10 +159,8 @@ export function DeviceGrid({
   const byId = new Map(devices.map((d) => [d.deviceId, d]));
 
   const flat = normalize({ columns: 1, order: [flatten(layout.order)] }, devices)[0];
-  const fits = width > 0 ? Math.max(1, Math.floor((width + GAP_PX) / (MIN_COLUMN_PX + GAP_PX))) : 3;
-  const auto = layout.columns === 0;
-  const cols = auto ? Math.max(1, Math.min(fits, flat.length)) : Math.min(layout.columns, fits);
-  const squeezed = !auto && fits < layout.columns;
+  const cols = columnsFor(layout.columns, width, flat.length);
+  const squeezed = layout.columns > 0 && cols < layout.columns;
 
   const commit = (next: string[]) => onSave({ columns: layout.columns, order: [next] });
 
@@ -201,11 +206,10 @@ export function DeviceGrid({
 
   return (
     <div ref={ref}>
-      {squeezed && arranging && (
-        <Notice>
-          The panel is only wide enough for {cols} column{cols === 1 ? "" : "s"}, so that's what you see. Your choice of{" "}
-          {layout.columns} comes back when the panel is wider.
-        </Notice>
+      {squeezed && (
+        <p className={c("hint")} role="status" style={{ margin: "0 0 8px" }}>
+          The panel is only wide enough for {cols} column{cols === 1 ? "" : "s"}. Widen it to see all {layout.columns}.
+        </p>
       )}
       <div
         className={c("snap", arranging && "snap--arranging")}
