@@ -20,15 +20,15 @@ traffic log for troubleshooting.
 - Current version: see `src/PowerStation/plugin.json` and
   [CHANGELOG.md](../CHANGELOG.md).
 
-## Status (2026-09-28, 0.6.3)
+## Status (2026-09-29, 1.0.0)
 
 Working on the operator's hardware: Shelly 1 Gen4 (two), Plus Wall Dimmer,
 ShellyEM (Gen1, "Generator Output"), Plus RGBW PM (RGBW mode). Cross-VLAN
 scanning works. Everything else is covered by the simulators in the test suite
 but hasn't been on real hardware; see [HARDWARE-TESTING.md](HARDWARE-TESTING.md).
 
-The operator is running 0.6.x for a few days with the Debug log on.
-Not yet submitted to the Zeus catalog; see
+1.0.0 is the first catalog release (Debug log off by default). Submission
+steps and status:
 [CATALOG-SUBMISSION.md](CATALOG-SUBMISSION.md).
 
 ## Repository layout
@@ -159,7 +159,6 @@ the operator, on a feature branch; fixes from testing go straight to main.
   worth checking against Shelly spec sheets.
 - Gen1 RGBW2 isn't supported; Gen2+ has no lighting effects.
 - Planned: rules on readings (low-battery cutoff, AC too low/high), optional
-  light flash/dim as an idle warning, catalog submission.
-- Debug log is on by default during testing. Before the catalog release,
-  decide whether to ship it off by default (`LoadDebugEnabledAsync` default in
-  `DeviceStore.cs`).
+  light flash/dim as an idle warning.
+- Debug log is off by default (1.0.0). Ask operators to turn it on in
+  Setup › Debug before sending a log.

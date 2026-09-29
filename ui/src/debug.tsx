@@ -41,7 +41,7 @@ function asText(entries: TrafficEntry[]) {
 export function DebugLog({ client, status }: { client: PowerStationClient; status: StatusState }) {
   const devices = status.data?.devices ?? [];
   const [entries, setEntries] = useState<TrafficEntry[]>([]);
-  const [enabled, setEnabled] = useState(true);
+  const [enabled, setEnabled] = useState(false);
   const [recordAll, setRecordAll] = useState(false);
   const [until, setUntil] = useState<string | null>(null);
   const [device, setDevice] = useState<string>("*");
@@ -181,7 +181,7 @@ export function DebugLog({ client, status }: { client: PowerStationClient; statu
         <span>Debug log on</span>
       </label>
       {!enabled ? (
-        <p className={c("hint")}>The debug log is off. Nothing is being recorded.</p>
+        <p className={c("hint")}>The debug log is off. Nothing is being recorded. Turn it on when you need a log for a device problem.</p>
       ) : (
       <>
       <label className={c("check")} style={{ marginBottom: 8 }}>

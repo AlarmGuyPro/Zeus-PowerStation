@@ -7,7 +7,7 @@ If anything here disagrees with that guide, the guide wins.
 ## Before submitting
 
 - [ ] Hardware checks in [HARDWARE-TESTING.md](HARDWARE-TESTING.md) done for the devices you'll claim.
-- [ ] Decide the Debug log default for release (on or off).
+- [x] Decide the Debug log default for release: off (1.0.0).
 - [ ] Version bumped (plugin.json, csproj, operator README heading) and CHANGELOG updated.
 - [ ] CI green on Linux, Windows and macOS for the release commit.
 - [ ] Screenshot set current (`tools/screenshots`: dark, light, narrow, 200%, keyboard focus, error and first-run states are in `docs/screenshots`). Retake inside Zeus if the reviewers ask for real-host screenshots.

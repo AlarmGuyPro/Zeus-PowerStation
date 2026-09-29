@@ -32,7 +32,7 @@ public interface IDeviceStore
     Task<Layout?> LoadLayoutAsync(CancellationToken ct);
     Task SaveLayoutAsync(Layout layout, CancellationToken ct);
     /// <summary>Whether the Debug traffic log is on. Defaults to on.</summary>
-    Task<bool> LoadDebugEnabledAsync(CancellationToken ct) => Task.FromResult(true);
+    Task<bool> LoadDebugEnabledAsync(CancellationToken ct) => Task.FromResult(false);
     Task SaveDebugEnabledAsync(bool enabled, CancellationToken ct) => Task.CompletedTask;
 }
 
@@ -103,9 +103,9 @@ public sealed class SettingsDeviceStore : IDeviceStore
     public async Task<bool> LoadDebugEnabledAsync(CancellationToken ct)
     {
         var json = await _settings.GetAsync<string>(DebugKey, ct).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(json)) return true;
+        if (string.IsNullOrWhiteSpace(json)) return false;
         try { return JsonDocument.Parse(json).RootElement.GetProperty("enabled").GetBoolean(); }
-        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { return true; }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { return false; }
     }
 
     public Task SaveDebugEnabledAsync(bool enabled, CancellationToken ct) =>

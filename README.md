@@ -35,7 +35,8 @@ and ships inside the package.
 | 3+ | Setup › Debug: filterable device traffic log (commands, errors, optional polls) with copy/download; unreadable status shown on the card | **Done** (0.6.1) |
 | 3+ | Plus RGBW PM connects: device replies with a repeated setting name are read (last value wins); output names can't block polling (found with the debug log) | **Done** (0.6.2) |
 | 3+ | Devices shown in a labelled box like Scenes; debug log on/off switch (remembered) with tighter limits (memory only, 500 entries, 24 h); handoff docs, changelog, promo image | **Done** (0.6.3) |
-| 4 | Rules on readings (low battery, AC out of range), polish, in-Zeus screenshots, catalog submission | Planned |
+| 4 | Catalog release: debug log off by default | **Done** (1.0.0) |
+| 5 | Rules on readings (low battery, AC out of range), polish, in-Zeus screenshots | Planned |
 
 ## Layout
 

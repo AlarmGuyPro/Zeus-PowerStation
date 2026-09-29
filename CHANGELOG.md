@@ -2,6 +2,11 @@
 
 All versions by KQ4WLR. Newest first.
 
+## 1.0.0 (2026-09-29)
+- First catalog release.
+- Debug log is off by default. Turn it on in Setup › Debug when you need a
+  log for a device problem; the choice is remembered.
+
 ## 0.6.3 (2026-09-28)
 - The Devices section on the panel uses the same labelled box as Scenes.
 - Debug log: an on/off switch that's remembered (off also clears it), and

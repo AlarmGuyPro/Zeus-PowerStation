@@ -14,6 +14,6 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="../../src/PowerStation/KQ4WLR.PowerStation.csproj" />
-    <ProjectReference Include="../../sdk/Openhpsdr.Zeus.Plugins.Contracts/Zeus.Plugins.Contracts.csproj" />
+    <ProjectReference Include="../../sdk/Zeussdr.Zeus.Plugins.Contracts/Zeus.Plugins.Contracts.csproj" />
   </ItemGroup>
 </Project>

@@ -22,6 +22,7 @@ public static class DebugLogTests
             f.Switches.Add(new FakeShellyGen2.FakeSwitch());
         });
         await using var host = await PluginHost.StartAsync();
+        await host.SendAsync(HttpMethod.Put, "debug", new { enabled = true });
         await host.SendAsync(HttpMethod.Post, "devices", new { host = fake.Host, password = "wrong" });
         await host.SendAsync(HttpMethod.Post, "devices", new { host = fake.Host, password = "secret-pw" });
         await host.SendAsync(HttpMethod.Post, $"devices/{fake.DeviceId}/channels/switch/0", new { action = "on" });
@@ -75,8 +76,11 @@ public static class DebugLogTests
         var context = new FakePluginContext();
         await using (var host = await PluginHost.StartAsync(context))
         {
+            var (_, initial) = await host.SendAsync(HttpMethod.Get, "debug/log");
+            Assert.False(initial!["enabled"]!.GetValue<bool>(), "off by default");
+            await host.SendAsync(HttpMethod.Put, "debug", new { enabled = true });
             await host.SendAsync(HttpMethod.Post, "devices", new { host = fake.Host });
-            Assert.True((await Log(host)).Count > 0, "on by default");
+            Assert.True((await Log(host)).Count > 0, "records once switched on");
             var (_, off) = await host.SendAsync(HttpMethod.Put, "debug", new { enabled = false });
             Assert.False(off!["enabled"]!.GetValue<bool>(), "off");
             await host.SendAsync(HttpMethod.Post, $"devices/{fake.DeviceId}/channels/switch/0", new { action = "on" });
@@ -94,6 +98,7 @@ public static class DebugLogTests
     {
         await using var one = await FakeShellyGen1.StartAsync("SHSW-1", f => { f.Password = "gen1-pw"; f.Relays.Add(new FakeShellyGen1.Relay()); });
         await using var host = await PluginHost.StartAsync();
+        await host.SendAsync(HttpMethod.Put, "debug", new { enabled = true });
         var (_, device) = await host.SendAsync(HttpMethod.Post, "devices", new { host = one.Host, password = "gen1-pw" });
         await host.SendAsync(HttpMethod.Post, $"devices/{device!["deviceId"]}/channels/switch/0", new { action = "on" });
         var entries = await Log(host);

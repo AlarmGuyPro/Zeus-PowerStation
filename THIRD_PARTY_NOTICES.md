@@ -9,7 +9,7 @@ browser module, `plugin.json`, this file, the README and the license.
 
 ## Used at build or run time, not bundled
 
-- **Zeus plugin contracts** (`sdk/Openhpsdr.Zeus.Plugins.Contracts`),
+- **Zeus plugin contracts** (`sdk/Zeussdr.Zeus.Plugins.Contracts`),
   GPL-2.0-or-later, © Douglas J. Cerrato (KB2UKA), Christian Suarez (N9WAR)
   and contributors. Vendored unchanged from
   https://github.com/Zeus-SDR/zeus-community-features for compilation; the

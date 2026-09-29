@@ -4,6 +4,11 @@ What was decided with the operator (KQ4WLR) and the reasons, newest first.
 Kept in step with the project notes. For how to build and release, see
 [HANDOFF.md](HANDOFF.md).
 
+## 1.0.0 catalog release (2026-09-29)
+- Version 1.0.0 is the first submission to the Zeus community catalog.
+- Debug log off by default; operators turn it on in Setup › Debug when asked
+  for a log.
+
 ## 0.6.3 polish (2026-09-28)
 - The Devices section on the panel uses the same labelled box as Scenes
   (accent left edge), so the two read as one design.
@@ -11,9 +16,8 @@ Kept in step with the project notes. For how to build and release, see
   request/reply cut to 2,000 characters, nothing older than 24 hours. "Record
   every poll" still switches itself off after 30 minutes.
 - Debug log on/off switch in Setup › Debug, saved in `debug.v1`. Off stops
-  recording and clears the log. **On by default for now** so the operator can
-  test for a few days; decide the release default before the catalog
-  submission (`DeviceStore.LoadDebugEnabledAsync`).
+  recording and clears the log. Off by default from 1.0.0 (decided
+  2026-09-29 for the catalog release; `DeviceStore.LoadDebugEnabledAsync`).
 - Capabilities: ABI 1 grants the declared capabilities on install; Zeus doesn't
   show an approval prompt for them.
 
