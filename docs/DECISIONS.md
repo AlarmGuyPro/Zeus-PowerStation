@@ -136,6 +136,15 @@ From KB2UKA's review of the 1.0.0 listing PR.
   waiting. Global Running/Paused switch, Test per rule, activity log.
 - Band comes from frequency using PowerStation's own band table.
 
+## Catalog review 2 notes (2026-09-30, for the next version)
+- Safety-timer renewals stay on during TX (maintainer agrees). Close the edge
+  where a renewal switches back on an output turned off at the device between
+  the poll and the renewal: re-read the channel just before renewing, or skip
+  renewal during TX while the timer has margin. Details:
+  catalog/review-2-notes-1.1.0.md.
+- Hardware CW keyer and the MOX event: Zeus's question to confirm; a host fix
+  if needed, no PowerStation change.
+
 ## Later (operator)
 - Rules on readings: low-battery cutoff, AC too low or too high.
 - Optional light flash/dim as the idle warning.

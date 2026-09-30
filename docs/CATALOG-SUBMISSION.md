@@ -11,12 +11,14 @@ If anything here disagrees with that guide, the guide wins.
 | 2026-09-29 | 1.0.0 released (tag `v1.0.0`) and listing PR opened on Zeus-SDR/zeus-community-features from branch `community/io.github.alarmguypro.powerstation-1.0.0` of the AlarmGuyPro fork. |
 | 2026-09-30 | KB2UKA requested changes: refind could send stored passwords to an unconfirmed address; TX interlock gaps (queued rules, manual commands, scenes); loopback accepted; `encodeURIComponent` on the channel kind. The catalog also added `source` blocks, `zeus-build.json`, a security scan and a rebuild-from-source check. |
 | 2026-09-30 | 1.1.0 released (tag `v1.1.0`, commit `00e8a6e`, SHA-256 `34204b4e…2ba5`) with all fixes; rebuild check and security scan clear locally. PR branch rebased and updated to 1.1.0 (the entry lists only 1.1.0 because 1.0.0 was never listed); title, description ([catalog/pr-description-1.1.0.md](catalog/pr-description-1.1.0.md)) and reply ([catalog/review-1-reply-1.1.0.md](catalog/review-1-reply-1.1.0.md)) posted. |
+| 2026-09-30 | Second review: security scan clear and the offline rebuild from `00e8a6e` matches the ZIP (first listing through the new gates). Two non-blocking notes for a later release, recorded in [catalog/review-2-notes-1.1.0.md](catalog/review-2-notes-1.1.0.md): safety-timer renewal can switch back on an output turned off between poll and renewal; hardware CW keyer may not raise the MOX event (Zeus host side). |
 
-**Next:** wait for KB2UKA's second review. If he asks for code changes, they
-go into a new version (1.1.1 or 1.2.0) with a new ZIP, release and hash; the
-same PR branch is updated, as in the "Next round" section below. If he asks
-only about the listing text, edit `registry.json` on the PR branch or the PR
-description.
+**Next:** the two review-2 notes go into the next version (1.1.1 or 1.2.0):
+fix the safety-timer renewal edge, and follow up on hardware CW keying (a Zeus
+host question; test with the operator's keyer). See
+[catalog/review-2-notes-1.1.0.md](catalog/review-2-notes-1.1.0.md). The new
+version follows the "Next round" steps below; the reply should say how each
+note was handled.
 
 ## Next round (updating the open PR)
 

@@ -30,6 +30,8 @@ TX interlock (1.1.0)
 - [ ] Run a scene while keyed: refused. Unkey and wait 3 s: it works.
 - [ ] A band rule that comes due during TX runs about 3 s after the last unkey, not between CW words or VOX gaps.
 - [ ] The on-air light still follows TX.
+- [ ] Key CW with the radio's own hardware keyer (not MOX/TUN): does the on-air light follow and are outputs locked? Report the result to the catalog maintainer (review 2 note: Zeus may not raise the MOX event for it).
+- [ ] (After the renewal fix) Output with a safety timer turned off in the Shelly app right after a poll: it stays off.
 
 New address for a device with a password (1.1.0)
 - [ ] Give a password-protected device a new DHCP address (or change its reservation): its card shows "New address found" and it is not moved on its own.

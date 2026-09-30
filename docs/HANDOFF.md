@@ -31,8 +31,9 @@ but hasn't been on real hardware; see [HARDWARE-TESTING.md](HARDWARE-TESTING.md)
 1.1.0 carries the review fixes (TX interlock, confirmed moves for devices with
 a password, local-only addresses, no loopback) and is released as tag `v1.1.0`
 on commit `00e8a6e`. The listing PR on Zeus-SDR/zeus-community-features now
-carries 1.1.0 and the reply to the review has been posted; waiting for the
-next review round. Details, history and what to do next:
+carries 1.1.0. The second review found the rebuild and security scan clear
+and left two non-blocking notes for a later release (safety-timer renewal
+edge, hardware CW keying). Details, history and what to do next:
 [CATALOG-SUBMISSION.md](CATALOG-SUBMISSION.md).
 
 The operator tested 1.1.0 in Zeus: while transmitting, output buttons are
@@ -165,6 +166,15 @@ the operator, on a feature branch; fixes from testing go straight to main.
 
 ## Known limits and open items
 
+- Next version (catalog review 2, non-blocking): a safety-timer renewal sends
+  "on + timer" from the last poll, so an output switched off at the device
+  between that poll and the renewal comes back on. Fix in
+  `DeviceManager.RenewSafetyTimersAsync` by re-reading the channel before
+  renewing (or skipping renewal during TX while the timer has margin). See
+  [catalog/review-2-notes-1.1.0.md](catalog/review-2-notes-1.1.0.md).
+- Zeus raises the MOX event for MOX, TUN and two-tone; whether a radio's own
+  hardware CW keyer raises it is unconfirmed (Zeus host side). If not, the TX
+  interlock doesn't see hardware-keyed CW.
 - Zeus doesn't expose mouse/keyboard activity, radio-connected state, S-meter
   or TX power to plugins; idle is based on radio and PowerStation activity.
 - Zeus "closes" is only seen on a clean shutdown; safety timers cover crashes.
