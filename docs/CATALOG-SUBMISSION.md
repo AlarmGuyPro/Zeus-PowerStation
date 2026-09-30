@@ -4,12 +4,50 @@ Summarised from the catalog's own guide,
 [Zeus-SDR/zeus-community-features CONTRIBUTING.md](https://github.com/Zeus-SDR/zeus-community-features/blob/main/CONTRIBUTING.md).
 If anything here disagrees with that guide, the guide wins.
 
+## Status and history
+
+| Date | What happened |
+|---|---|
+| 2026-09-29 | 1.0.0 released (tag `v1.0.0`) and listing PR opened on Zeus-SDR/zeus-community-features from branch `community/io.github.alarmguypro.powerstation-1.0.0` of the AlarmGuyPro fork. |
+| 2026-09-30 | KB2UKA requested changes: refind could send stored passwords to an unconfirmed address; TX interlock gaps (queued rules, manual commands, scenes); loopback accepted; `encodeURIComponent` on the channel kind. The catalog also added `source` blocks, `zeus-build.json`, a security scan and a rebuild-from-source check. |
+| 2026-09-30 | 1.1.0 released (tag `v1.1.0`, commit `00e8a6e`, SHA-256 `34204b4e…2ba5`) with all fixes; rebuild check and security scan clear locally. PR branch rebased and updated to 1.1.0 (the entry lists only 1.1.0 because 1.0.0 was never listed); title, description ([catalog/pr-description-1.1.0.md](catalog/pr-description-1.1.0.md)) and reply ([catalog/review-1-reply-1.1.0.md](catalog/review-1-reply-1.1.0.md)) posted. |
+
+**Next:** wait for KB2UKA's second review. If he asks for code changes, they
+go into a new version (1.1.1 or 1.2.0) with a new ZIP, release and hash; the
+same PR branch is updated, as in the "Next round" section below. If he asks
+only about the listing text, edit `registry.json` on the PR branch or the PR
+description.
+
+## Next round (updating the open PR)
+
+1. Fix, bump the version, update CHANGELOG, commit and push to main.
+2. Build the ZIP from a clean clone of that commit, then run the rebuild check
+   and security scan (below).
+3. The operator tests in Zeus, then publishes the GitHub Release `v<version>`
+   on that commit with the ZIP and `.sha256`.
+4. Verify the release download's SHA-256.
+5. On the fork, rebase the PR branch onto `upstream/main` and replace the
+   PowerStation version in `registry.json` with the new one (sha256, custody
+   `downloadUrl`, `source` block). While the feature isn't listed yet, keep
+   only the newest version; once it's listed, add new versions at the top and
+   keep the old ones. Update `generated`. Run the registry checks, then
+   force-push the branch (with lease).
+6. The operator updates the PR title's version, replaces the description
+   (start from the newest file in [catalog/](catalog/)), posts a reply
+   listing each point and how it was fixed, and re-requests review
+   (circular-arrows icon next to the reviewer).
+
+The PR branch name still ends in `-1.0.0`; that's fine, it doesn't need to
+match the version.
+
 ## Before submitting
 
 - [ ] Hardware checks in [HARDWARE-TESTING.md](HARDWARE-TESTING.md) done for the devices you'll claim.
 - [x] Decide the Debug log default for release: off (1.0.0).
 - [ ] Version bumped (plugin.json, csproj, operator README heading) and CHANGELOG updated.
-- [ ] CI green on Linux, Windows and macOS for the release commit.
+- [ ] CI green on Linux, Windows and macOS for the release commit. (1.1.0's
+      macOS job failed only because CI didn't install the `global.json` SDK;
+      fixed in CI after the release.)
 - [ ] Screenshot set current (`tools/screenshots`: dark, light, narrow, 200%, keyboard focus, error and first-run states are in `docs/screenshots`). Retake inside Zeus if the reviewers ask for real-host screenshots.
 
 ## Build the ZIP from the release commit
@@ -33,15 +71,24 @@ pwsh tools/verify-source-build.ps1 -PackagePath <zip> -SourceDirectory <fresh cl
 dotnet tools/PackageSecurityScan/bin/Release/net10.0/PackageSecurityScan.dll scan --package <zip>
 ```
 
-Both reported CLEAR for 1.1.0.
+Both reported CLEAR for 1.1.0. On Linux the rebuild check needs bubblewrap
+(`apt-get install bubblewrap`); it works in the Claude workspace.
 
 ## Publish the release
 
-1. Tag the exact commit: `git tag v<version> && git push origin v<version>`.
-2. Create a GitHub Release for the tag and attach
-   `io.github.alarmguypro.powerstation-<version>.zip`. Never replace the bytes later.
-3. Get the SHA-256 (lowercase) of that exact ZIP:
-   `(Get-FileHash -Algorithm SHA256 <zip>).Hash.ToLowerInvariant()` or the `.sha256` file from the build.
+The Claude workspace can't push tags or create releases, so the operator does
+this on GitHub:
+
+1. Open https://github.com/AlarmGuyPro/Zeus-PowerStation/releases/new
+2. Choose a tag: type `v<version>` (check it matches plugin.json) and pick
+   "Create new tag on publish". Target: main, which must still be the commit
+   the ZIP was built from.
+3. Title `PowerStation <version>`; attach
+   `io.github.alarmguypro.powerstation-<version>.zip` and its `.sha256`.
+   Publish. Never replace the bytes later.
+4. Check that
+   `https://github.com/AlarmGuyPro/Zeus-PowerStation/releases/download/v<version>/io.github.alarmguypro.powerstation-<version>.zip`
+   downloads and its SHA-256 matches the `.sha256` file.
 
 ## Registry entry
 

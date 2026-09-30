@@ -10,6 +10,7 @@ items as they're verified and note the firmware version.
 - [x] ShellyEM (Gen1): relay and both clamp meters; renaming meters (0.5.1)
 - [x] Plus RGBW PM, RGBW mode: connects after the repeated-key fix (0.6.2)
 - [x] Scan across VLANs when the networks are listed (0.3.0)
+- [x] 1.1.0 in Zeus: output buttons locked while transmitting, with the "Zeus is transmitting" message (2026-09-30)
 
 ## To check
 
@@ -26,7 +27,6 @@ Rules
 - [ ] Nothing but the on-air light switches while transmitting.
 
 TX interlock (1.1.0)
-- [ ] Key up (a short tune or MOX) and press an output button: it's refused with "Zeus is transmitting…", and the panel shows the Transmitting notice.
 - [ ] Run a scene while keyed: refused. Unkey and wait 3 s: it works.
 - [ ] A band rule that comes due during TX runs about 3 s after the last unkey, not between CW words or VOX gaps.
 - [ ] The on-air light still follows TX.

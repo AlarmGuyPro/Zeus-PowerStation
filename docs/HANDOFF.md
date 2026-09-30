@@ -27,10 +27,16 @@ ShellyEM (Gen1, "Generator Output"), Plus RGBW PM (RGBW mode). Cross-VLAN
 scanning works. Everything else is covered by the simulators in the test suite
 but hasn't been on real hardware; see [HARDWARE-TESTING.md](HARDWARE-TESTING.md).
 
-1.0.0 was submitted to the Zeus catalog and reviewed; 1.1.0 carries the
-review fixes (TX interlock, confirmed moves for devices with a password,
-local-only addresses). Submission steps and status:
+**Catalog:** 1.0.0 was submitted and reviewed by KB2UKA (changes requested).
+1.1.0 carries the review fixes (TX interlock, confirmed moves for devices with
+a password, local-only addresses, no loopback) and is released as tag `v1.1.0`
+on commit `00e8a6e`. The listing PR on Zeus-SDR/zeus-community-features now
+carries 1.1.0 and the reply to the review has been posted; waiting for the
+next review round. Details, history and what to do next:
 [CATALOG-SUBMISSION.md](CATALOG-SUBMISSION.md).
+
+The operator tested 1.1.0 in Zeus: while transmitting, output buttons are
+locked and show the "Zeus is transmitting" message.
 
 ## Repository layout
 
@@ -130,11 +136,19 @@ Tests run a single test by name filter: `dotnet run --project tests/PowerStation
 1. Bump the version in `src/PowerStation/plugin.json`,
    `src/PowerStation/KQ4WLR.PowerStation.csproj` and the heading of
    `src/PowerStation/README.md`; add a CHANGELOG entry.
-2. Build, test, package, validate (above).
-3. Commit, tag `v<version>` on that exact commit, push the tag.
-4. Create a GitHub Release for the tag and attach the ZIP (and its `.sha256`).
-   Never replace a published ZIP; release a new version instead.
-5. Install in Zeus: Features › Community › Install local feature.
+2. Build and test (above), then commit and push.
+3. Build the release ZIP from a clean clone of that exact commit
+   ([CATALOG-SUBMISSION.md](CATALOG-SUBMISSION.md) has the commands). The
+   commit hash is stamped into the DLL, and the catalog rebuilds from that
+   commit, so don't push anything else to main until the tag exists.
+4. The operator installs the ZIP in Zeus (Features › Community › Install
+   local feature) and tests.
+5. The operator creates the GitHub Release in the web page: tag `v<version>`
+   (check the number), target main, attach the ZIP and its `.sha256`. The
+   Claude workspace can push branches but not tags or releases. Never replace
+   a published ZIP; release a new version instead.
+6. Check the release URL downloads and its SHA-256 matches, then update the
+   catalog PR.
 
 UI changes go through the mockup first (`cd ui && npm run mockup`), reviewed by
 the operator, on a feature branch; fixes from testing go straight to main.
@@ -163,3 +177,9 @@ the operator, on a feature branch; fixes from testing go straight to main.
   light flash/dim as an idle warning.
 - Debug log is off by default (1.0.0). Ask operators to turn it on in
   Setup › Debug before sending a log.
+- A stray tag `v1.0.1` (same commit as v1.1.0, no release) is left from a
+  mistyped first attempt at the 1.1.0 release. Harmless; delete it from the
+  Tags page if wanted, and don't use 1.0.1 as a version number.
+- CI installs the SDK from `global.json` (10.0.112, no roll-forward). When
+  moving to a newer SDK, change `global.json` only; CI and the catalog's
+  rebuild check both follow it.
