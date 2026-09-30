@@ -3,7 +3,7 @@
 Control and monitor the Shelly relays, plugs, dimmers and energy meters in
 your shack from inside Zeus, and let Zeus switch them for you. By KQ4WLR.
 
-## What it does (version 1.0.0)
+## What it does (version 1.1.0)
 
 - **Turn outputs on and off** on Shelly Gen1, Gen2, Gen3, Gen4 and "Powered
   by Shelly" devices: Shelly 1 / 1PM / 2.5 (relay mode), Plug and Plug S,
@@ -31,7 +31,10 @@ your shack from inside Zeus, and let Zeus switch them for you. By KQ4WLR.
 - **Safety timers**: the device itself switches an output off if Zeus stops
   looking after it (a crash, a power cut, or just closing Zeus).
 - **Finds your devices** on your networks and VLANs and follows them when
-  DHCP gives them a new address.
+  DHCP gives them a new address. A device with a password waits for you to
+  confirm its new address (see Networks).
+- **Locks outputs while you transmit**: nothing switches during TX or for 3
+  seconds after, except the on-air light.
 
 ## Setting up
 
@@ -80,7 +83,10 @@ ends**: put back how it was, turn it off, something else, or leave it.
 | Time of day | Runs at a time only if the station has been idle; otherwise checks again later |
 
 - **Nothing switches while you transmit**, except the on-air light. Other
-  rules wait until TX ends; the panel shows what's waiting.
+  rules wait until TX has ended and the radio has been quiet for 3 seconds
+  (so CW break-in and VOX gaps don't count), and each rule checks again just
+  before it acts. The panel shows what's waiting. Buttons and scenes on the
+  panel are refused during that time too, with a message.
 - **Don't rely on the TX rule for safety.** The light follows TX over the
   network and can lag or miss a change. Never use it for amplifiers,
   antennas or T/R sequencing.
@@ -152,9 +158,17 @@ port 80. mDNS only reaches this computer's own network; the scan covers other
 VLANs, up to 4,096 addresses at a time. If Windows asks whether Zeus may use
 the network, allow it on private networks.
 
+When a device stops answering, PowerStation looks for it by its Shelly device
+ID and only ever uses local-network addresses. A device without a password
+moves to its new address by itself. A device with a password doesn't: its
+card shows **New address found** with the address, and PowerStation won't send
+the password there until you choose **Use** followed by the new address. If you don't
+recognise the address, choose **Ignore**; it won't be offered again.
+
 ## Privacy and safety
 
-- PowerStation only talks to devices on your local network. It never
+- PowerStation only talks to devices on your local network (private and
+  link-local addresses, never this computer's own loopback address). It never
   contacts the Internet.
 - It reads the radio's frequency, mode and TX state to run your rules. It
   never controls the radio: it doesn't tune, key the transmitter or touch

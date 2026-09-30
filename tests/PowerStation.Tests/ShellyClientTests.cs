@@ -61,10 +61,28 @@ public static class HostValidatorTests
     [Test]
     public static void OnlyLocalAddressesAreLocal()
     {
-        foreach (var ok in new[] { "10.1.2.3", "172.16.0.1", "172.31.255.1", "192.168.0.10", "169.254.1.1", "127.0.0.1", "fd12::1", "fe80::1", "::1", "100.64.0.1" })
+        foreach (var ok in new[] { "10.1.2.3", "172.16.0.1", "172.31.255.1", "192.168.0.10", "169.254.1.1", "fd12::1", "fe80::1", "100.64.0.1" })
             Assert.True(HostValidator.IsLocal(IPAddress.Parse(ok)), ok);
         foreach (var bad in new[] { "8.8.8.8", "172.32.0.1", "1.1.1.1", "2001:4860:4860::8888", "100.128.0.1" })
             Assert.False(HostValidator.IsLocal(IPAddress.Parse(bad)), bad);
+    }
+
+    [Test]
+    public static async Task LoopbackIsRefusedOutsideTheTestSuite()
+    {
+        HostValidator.AllowLoopback = false;
+        try
+        {
+            foreach (var loop in new[] { "127.0.0.1", "127.0.0.9", "::1", "::ffff:127.0.0.1" })
+                Assert.False(HostValidator.IsLocal(IPAddress.Parse(loop)), loop);
+            Assert.Contains("isn't a local-network address", await HostValidator.CheckLocalAsync("127.0.0.1:8080", CancellationToken.None));
+            Assert.Contains("isn't a local-network address", await HostValidator.CheckLocalAsync("localhost", CancellationToken.None));
+            Assert.False(HostValidator.IsLocalHost("127.0.0.1:80"), "found address on loopback");
+            Assert.True(HostValidator.IsLocalHost("192.168.1.20"), "found LAN address");
+            Assert.False(HostValidator.IsLocalHost("8.8.8.8"), "found public address");
+            Assert.False(HostValidator.IsLocalHost("shelly.example.com"), "found names aren't accepted");
+        }
+        finally { HostValidator.AllowLoopback = true; }
     }
 
     [Test]
@@ -72,7 +90,7 @@ public static class HostValidatorTests
     {
         var problem = await HostValidator.CheckLocalAsync("8.8.8.8", CancellationToken.None);
         Assert.Contains("isn't a local-network address", problem);
-        Assert.Equal(null, await HostValidator.CheckLocalAsync("127.0.0.1:8080", CancellationToken.None), "loopback");
+        Assert.Equal(null, await HostValidator.CheckLocalAsync("192.168.1.20:8080", CancellationToken.None), "LAN with port");
     }
 }
 

@@ -126,6 +126,8 @@ public static class Program
     public static async Task<int> Main(string[] args)
     {
         var filter = args.FirstOrDefault();
+        // Simulated devices listen on 127.0.0.x. The plugin itself never allows loopback.
+        KQ4WLR.PowerStation.Shelly.HostValidator.AllowLoopback = true;
         var tests = typeof(Program).Assembly.GetTypes()
             .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static)
                 .Where(m => m.GetCustomAttribute<TestAttribute>() is not null)

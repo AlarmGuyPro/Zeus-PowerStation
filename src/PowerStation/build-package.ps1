@@ -190,17 +190,23 @@ function Reserve-StagedPath {
 }
 
 function Copy-PackageAsset {
-    param([Parameter(Mandatory)][string] $RelativePath)
+    param(
+        [Parameter(Mandatory)][string] $RelativePath,
+        # Where the asset is read from. Defaults to beside this script; the
+        # browser module comes from ui/dist (see zeus-build.json).
+        [string] $SourceRoot = $PSScriptRoot,
+        [string] $SourceRelativePath = $RelativePath
+    )
     $packagePath = Get-SafePackagePath -Path $RelativePath
     if (-not $assetRoots.Add($packagePath)) {
         throw "Package asset was selected more than once: $packagePath"
     }
-    $sourcePath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $packagePath))
+    $sourcePath = [IO.Path]::GetFullPath((Join-Path $SourceRoot (Get-SafePackagePath -Path $SourceRelativePath)))
     $destinationPath = [IO.Path]::GetFullPath((Join-Path $stagingRoot $packagePath))
-    Assert-StrictChildPath -Parent $PSScriptRoot -Candidate $sourcePath -Label "Package asset source"
+    Assert-StrictChildPath -Parent $SourceRoot -Candidate $sourcePath -Label "Package asset source"
     Assert-StrictChildPath -Parent $stagingRoot -Candidate $destinationPath -Label "Package asset destination"
     if (-not (Test-Path -LiteralPath $sourcePath)) { throw "Package asset not found: $packagePath" }
-    Assert-NoLinkedPathComponents -Root $PSScriptRoot -Candidate $sourcePath -Label "Package asset source"
+    Assert-NoLinkedPathComponents -Root $SourceRoot -Candidate $sourcePath -Label "Package asset source"
     $sourceItems = @(Get-Item -LiteralPath $sourcePath -Force)
     if ($sourceItems[0].PSIsContainer) {
         $sourceItems += @(Get-ChildItem -LiteralPath $sourcePath -Recurse -Force)
@@ -209,10 +215,11 @@ function Copy-PackageAsset {
         throw "Linked package assets are forbidden: $packagePath"
     }
     $sourceItems = @($sourceItems | Sort-Object `
-        @{ Expression = { ([IO.Path]::GetRelativePath($PSScriptRoot, $_.FullName).Replace("\", "/").Split("/")).Count } }, `
+        @{ Expression = { ([IO.Path]::GetRelativePath($SourceRoot, $_.FullName).Replace("\", "/").Split("/")).Count } }, `
         @{ Expression = { if ($_.PSIsContainer) { 0 } else { 1 } } })
     foreach ($sourceItem in $sourceItems) {
-        $sourceRelative = [IO.Path]::GetRelativePath($PSScriptRoot, $sourceItem.FullName).Replace("\", "/")
+        $sourceRelative = [IO.Path]::GetRelativePath($SourceRoot, $sourceItem.FullName).Replace("\", "/")
+        if ($SourceRelativePath -ne $RelativePath) { $sourceRelative = $packagePath }
         [void](Reserve-StagedPath -RelativePath $sourceRelative -IsDirectory $sourceItem.PSIsContainer)
     }
     New-Item -ItemType Directory -Path (Split-Path -Parent $destinationPath) -Force | Out-Null
@@ -271,7 +278,10 @@ if (Test-Path -LiteralPath $noticesPath -PathType Leaf) {
 if ($null -ne $manifest.ui) {
     foreach ($module in @($manifest.ui.modules)) {
         if (-not [string]::IsNullOrWhiteSpace([string]$module)) {
-            Copy-PackageAsset -RelativePath ([string]$module)
+            $moduleName = [string]$module
+            if (-not $moduleName.StartsWith("ui/", [StringComparison]::Ordinal)) { throw "UI modules must live under ui/: $moduleName" }
+            Copy-PackageAsset -RelativePath $moduleName -SourceRoot (Join-Path $repoRoot "ui/dist") `
+                -SourceRelativePath $moduleName.Substring(3)
         }
     }
 }

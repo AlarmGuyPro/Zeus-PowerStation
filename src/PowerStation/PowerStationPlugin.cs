@@ -43,7 +43,9 @@ public sealed class PowerStationPlugin : IZeusPlugin, IBackendPlugin
         _http = CreateLanHttpClient();
         _scanHttp = NetworkScanner.CreateScanHttpClient();
         var store = new SettingsDeviceStore(context.Settings);
-        var manager = new DeviceManager(store, _http, context.Logger, Time);
+        // Every output change checks this first; only the on-air light rule may act during TX.
+        _tx = new TxInterlock(context.Radio, Time);
+        var manager = new DeviceManager(store, _http, context.Logger, Time, tx: _tx);
         await manager.LoadAsync(ct).ConfigureAwait(false);
         var discovery = new DiscoveryService(store, manager, new NetworkScanner(_scanHttp, ScanPort), context.Logger, useMdns: UseMdns);
         await discovery.LoadAsync(ct).ConfigureAwait(false);
@@ -89,6 +91,8 @@ public sealed class PowerStationPlugin : IZeusPlugin, IBackendPlugin
         _scanHttp = null;
         _http?.Dispose();
         _http = null;
+        _tx?.Dispose();
+        _tx = null;
         _context?.Logger.LogInformation("PowerStation stopped");
         _context = null;
     }
@@ -98,6 +102,8 @@ public sealed class PowerStationPlugin : IZeusPlugin, IBackendPlugin
             _context?.Manifest.Version ?? "0.0.0");
 
     internal AutomationService? Automations => _automations;
+
+    private TxInterlock? _tx;
 
     /// <summary>
     /// Shelly devices live on the LAN: never route them through a system

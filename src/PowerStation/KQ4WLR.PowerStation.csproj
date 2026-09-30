@@ -4,9 +4,11 @@
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>KQ4WLR.PowerStation</AssemblyName>
     <RootNamespace>KQ4WLR.PowerStation</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <IsPackable>false</IsPackable>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <!-- The catalog rebuild check restores only from lock files (this project has no packages). -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

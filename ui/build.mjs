@@ -13,7 +13,8 @@ await build({
   target: "es2022",
   jsx: "automatic",
   external: ["react", "react/jsx-runtime"],
-  outfile: "../src/PowerStation/ui/powerstation.js",
+  // Kept outside the .NET project folder, as the catalog's rebuild check requires.
+  outfile: "dist/powerstation.js",
   legalComments: "inline",
   minify: false,
   sourcemap: false,

@@ -20,15 +20,16 @@ traffic log for troubleshooting.
 - Current version: see `src/PowerStation/plugin.json` and
   [CHANGELOG.md](../CHANGELOG.md).
 
-## Status (2026-09-29, 1.0.0)
+## Status (2026-09-30, 1.1.0)
 
 Working on the operator's hardware: Shelly 1 Gen4 (two), Plus Wall Dimmer,
 ShellyEM (Gen1, "Generator Output"), Plus RGBW PM (RGBW mode). Cross-VLAN
 scanning works. Everything else is covered by the simulators in the test suite
 but hasn't been on real hardware; see [HARDWARE-TESTING.md](HARDWARE-TESTING.md).
 
-1.0.0 is the first catalog release (Debug log off by default). Submission
-steps and status:
+1.0.0 was submitted to the Zeus catalog and reviewed; 1.1.0 carries the
+review fixes (TX interlock, confirmed moves for devices with a password,
+local-only addresses). Submission steps and status:
 [CATALOG-SUBMISSION.md](CATALOG-SUBMISSION.md).
 
 ## Repository layout
@@ -58,7 +59,7 @@ src/PowerStation/                 The feature (packaged)
     DeviceStore.cs                Settings persistence (JSON strings per key)
   Model/Models.cs                 Records shared across the backend
   Api/PowerStationEndpoints.cs    HTTP endpoints (see docs/API.md)
-ui/                               React + TypeScript panels, bundled by esbuild into src/PowerStation/ui/powerstation.js
+ui/                               React + TypeScript panels, bundled by esbuild into ui/dist/powerstation.js (packaged as ui/powerstation.js)
   src/PowerStationPanel.tsx       Panel shell: header, gear, setup sections
   src/ControlsPanel.tsx           Main view: mains banner, Scenes box, Devices box, tiles (switch, wall dimmer, meter)
   src/color.tsx                   Colour tile and picker

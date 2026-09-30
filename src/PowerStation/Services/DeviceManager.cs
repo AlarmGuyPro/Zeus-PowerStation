@@ -43,8 +43,18 @@ public sealed record DeviceView
     public string? PreviousHost { get; init; }
     public DateTimeOffset? HostChangedAt { get; init; }
     public bool LineToLine { get; init; }
+    /// <summary>
+    /// A new address where this device (which has a saved password) was seen.
+    /// PowerStation won't send the password there until the operator confirms.
+    /// </summary>
+    public string? PendingHost { get; init; }
+    public string? PendingFoundBy { get; init; }
+    public DateTimeOffset? PendingSeenAt { get; init; }
     public required DeviceStatus Status { get; init; }
 }
+
+/// <summary>What happened when a device was seen at a new address.</summary>
+internal enum RelocateOutcome { None, Moved, NeedsConfirmation }
 
 /// <summary>Raised for operator-fixable request problems (maps to HTTP 400/404/409).</summary>
 public sealed class PowerStationRequestException(int statusCode, string message) : Exception(message)
@@ -75,17 +85,22 @@ public sealed class DeviceManager : IAsyncDisposable
         HttpClient http,
         ILogger logger,
         TimeProvider? time = null,
-        Func<string, CancellationToken, Task<string?>>? checkHost = null)
+        Func<string, CancellationToken, Task<string?>>? checkHost = null,
+        TxInterlock? tx = null)
     {
         _store = store;
         _http = http;
         _logger = logger;
         _time = time ?? TimeProvider.System;
         _checkHost = checkHost ?? HostValidator.CheckLocalAsync;
+        Tx = tx ?? new TxInterlock(null, _time);
         Traffic = new TrafficLog(_time);
     }
 
     public PowerStationOptions Options => _options;
+
+    /// <summary>Refuses output changes while the radio transmits.</summary>
+    public TxInterlock Tx { get; }
 
     /// <summary>Traffic with the devices, for the Debug section.</summary>
     public TrafficLog Traffic { get; }
@@ -170,6 +185,10 @@ public sealed class DeviceManager : IAsyncDisposable
         public SemaphoreSlim PollGate { get; } = new(1, 1);
         /// <summary>When each channel's safety timer was last set on the device.</summary>
         public Dictionary<string, DateTimeOffset> SafetyRenewedAt { get; } = new(StringComparer.Ordinal);
+        /// <summary>A new address awaiting the operator's confirmation (device has a password).</summary>
+        public (string Host, string FoundBy, DateTimeOffset SeenAt)? PendingMove { get; set; }
+        /// <summary>An address the operator chose to ignore; not offered again.</summary>
+        public string? IgnoredHost { get; set; }
     }
 
     // ------------------------------------------------------------ lifecycle
@@ -241,6 +260,8 @@ public sealed class DeviceManager : IAsyncDisposable
             {
                 var channels = await entry.Client.GetStatusAsync(ct).ConfigureAwait(false);
                 entry.Failures = 0;
+                // Answering at its saved address again: nothing to confirm.
+                entry.PendingMove = null;
                 var named = ApplyNames(entry.Record, channels);
                 entry.Status = new DeviceStatus
                 {
@@ -385,10 +406,13 @@ public sealed class DeviceManager : IAsyncDisposable
         App = e.Record.App,
         Mac = e.Record.Mac,
         AuthRequired = e.Record.AuthRequired,
-        HasCredential = e.Record.Ha1 is not null || e.Record.Gen1Password is not null,
+        HasCredential = HasCredential(e.Record),
         PreviousHost = e.Record.PreviousHost,
         HostChangedAt = e.Record.HostChangedAt,
         LineToLine = e.Record.LineToLine,
+        PendingHost = e.PendingMove?.Host,
+        PendingFoundBy = e.PendingMove?.FoundBy,
+        PendingSeenAt = e.PendingMove?.SeenAt,
         Status = DecorateSafely(e),
     };
 
@@ -599,7 +623,7 @@ public sealed class DeviceManager : IAsyncDisposable
     /// A failure on one output never stops the others.
     /// </summary>
     internal async Task<(IReadOnlyList<TargetResult> Results, IReadOnlyList<DeviceView> Devices)> ApplyTargetsAsync(
-        IReadOnlyList<SceneTarget> targets, double? fadeSeconds, CancellationToken ct)
+        IReadOnlyList<SceneTarget> targets, double? fadeSeconds, CancellationToken ct, bool allowDuringTx = false)
     {
         var results = new System.Collections.Concurrent.ConcurrentBag<TargetResult>();
         var touched = new List<Entry>();
@@ -615,6 +639,13 @@ public sealed class DeviceManager : IAsyncDisposable
             var name = entry.Record.Name ?? entry.Record.DeviceId;
             foreach (var t in group)
             {
+                // Checked right before each change: if the radio keys partway
+                // through, the rest is left alone.
+                if (!allowDuringTx && Tx.Blocked)
+                {
+                    results.Add(new TargetResult(t.DeviceId, t.ChannelKey, false, "Not changed: Zeus is transmitting."));
+                    continue;
+                }
                 try
                 {
                     if (t.Kind.IsColor())
@@ -648,24 +679,55 @@ public sealed class DeviceManager : IAsyncDisposable
     }
 
     /// <summary>
-    /// Moves a device to an address where its own ID was just seen, unless it
-    /// is still answering at its current address (a Pro on both Wi-Fi and
-    /// Ethernet has two addresses; don't flip between them). Returns the old
-    /// address when the device was moved, otherwise null.
+    /// Called when PowerStation itself (mDNS, a sweep or a scan) sees a
+    /// device's ID at another address. Nothing is sent to that address
+    /// beyond the unauthenticated identify request that found it:
+    /// <list type="bullet">
+    /// <item>the address must be an IP on the local network, or it's ignored;</item>
+    /// <item>a device still answering at its saved address isn't moved (a Pro
+    /// on Wi-Fi and Ethernet has two addresses; don't flip between them);</item>
+    /// <item>a device with a saved password isn't moved automatically, because
+    /// polling would send its credentials (plain HTTP Basic for Gen1) to
+    /// whatever answered there. The new address is shown on the device for the
+    /// operator to confirm or ignore;</item>
+    /// <item>a device without a password is moved and polled.</item>
+    /// </list>
     /// </summary>
-    internal async Task<string?> RelocateIfMovedAsync(string deviceId, string newHost, string how, CancellationToken ct)
+    internal async Task<(RelocateOutcome Outcome, string? OldHost)> RelocateIfMovedAsync(
+        string deviceId, string newHost, string how, CancellationToken ct)
     {
-        if (!_entries.TryGetValue(deviceId, out var entry)) return null;
-        if (string.Equals(entry.Record.Host, newHost, StringComparison.OrdinalIgnoreCase)) return null;
-        if (entry.Status.Health == DeviceHealth.Online) return null;
+        if (!_entries.TryGetValue(deviceId, out var entry)) return (RelocateOutcome.None, null);
+        if (string.Equals(entry.Record.Host, newHost, StringComparison.OrdinalIgnoreCase)) return (RelocateOutcome.None, null);
+        if (!HostValidator.IsLocalHost(newHost))
+        {
+            _logger.LogWarning("PowerStation: ignored {Device} at {Host}: not a local-network address", deviceId, newHost);
+            Traffic.Event(deviceId, "Re-finding", $"Ignored {newHost}: not a local-network address.");
+            return (RelocateOutcome.None, null);
+        }
+        if (entry.Status.Health == DeviceHealth.Online) return (RelocateOutcome.None, null);
+
+        if (HasCredential(entry.Record))
+        {
+            if (string.Equals(entry.IgnoredHost, newHost, StringComparison.OrdinalIgnoreCase)) return (RelocateOutcome.None, null);
+            if (!string.Equals(entry.PendingMove?.Host, newHost, StringComparison.OrdinalIgnoreCase))
+            {
+                entry.PendingMove = (newHost, how, _time.GetUtcNow());
+                _logger.LogInformation("PowerStation: {Device} seen at {New} (by {How}); waiting for the operator to confirm the move",
+                    deviceId, newHost, how);
+                Traffic.Event(deviceId, "Re-finding",
+                    $"Seen at {newHost} by {how}. It has a password, so PowerStation waits for you to confirm the new address.");
+            }
+            return (RelocateOutcome.NeedsConfirmation, null);
+        }
 
         string oldHost;
         await _mutate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (!_entries.TryGetValue(deviceId, out entry)) return null;
+            if (!_entries.TryGetValue(deviceId, out entry)) return (RelocateOutcome.None, null);
+            if (HasCredential(entry.Record)) return (RelocateOutcome.None, null); // a password was added meanwhile
             oldHost = entry.Record.Host;
-            if (string.Equals(oldHost, newHost, StringComparison.OrdinalIgnoreCase)) return null;
+            if (string.Equals(oldHost, newHost, StringComparison.OrdinalIgnoreCase)) return (RelocateOutcome.None, null);
             await ReplaceAsync(entry.Record with
             {
                 Host = newHost,
@@ -679,8 +741,35 @@ public sealed class DeviceManager : IAsyncDisposable
         }
         _logger.LogInformation("PowerStation: {Device} moved from {Old} to {New} (found by {How})", deviceId, oldHost, newHost, how);
         await PollEntryAsync(entry, ct).ConfigureAwait(false);
-        return oldHost;
+        return (RelocateOutcome.Moved, oldHost);
     }
+
+    /// <summary>
+    /// The operator confirmed the new address: check it again (local network,
+    /// same device ID) and switch to it. Uses the stored credentials from now on.
+    /// </summary>
+    public async Task<DeviceView> ConfirmMoveAsync(string deviceId, CancellationToken ct)
+    {
+        var entry = Find(deviceId);
+        var pending = entry.PendingMove ?? throw new PowerStationRequestException(409,
+            "There's no new address waiting for this device. It may already be answering again.");
+        await UpdateAsync(deviceId, new UpdateDeviceRequest(null, pending.Host, null, null, null), ct).ConfigureAwait(false);
+        entry.PendingMove = null;
+        entry.IgnoredHost = null;
+        return ToView(entry);
+    }
+
+    /// <summary>The operator doesn't recognise the new address: keep the saved one and don't offer it again.</summary>
+    public DeviceView IgnoreMove(string deviceId)
+    {
+        var entry = Find(deviceId);
+        if (entry.PendingMove is { } pending) entry.IgnoredHost = pending.Host;
+        entry.PendingMove = null;
+        return ToView(entry);
+    }
+
+    private static bool HasCredential(DeviceRecord record) =>
+        record.Ha1 is not null || record.Gen1Password is not null;
 
     public async Task<DeviceView> RefreshAsync(string deviceId, CancellationToken ct)
     {
@@ -701,6 +790,7 @@ public sealed class DeviceManager : IAsyncDisposable
         if (entry.Status.Health == DeviceHealth.Online && known is null)
             throw new PowerStationRequestException(404, $"The device has no {kind.ToString().ToLowerInvariant()} {index}.");
 
+        Tx.ThrowIfBlocked();
         var client = entry.Client;
         switch (command.Action?.Trim().ToLowerInvariant())
         {

@@ -113,6 +113,14 @@ export interface DeviceView {
   hasCredential: boolean;
   previousHost?: string | null;
   hostChangedAt?: string | null;
+  /**
+   * A new address where this device (which has a password) answered with its
+   * own ID. PowerStation doesn't send the password there until the operator
+   * confirms with confirmMove, or ignores it with ignoreMove.
+   */
+  pendingHost?: string | null;
+  pendingFoundBy?: string | null;
+  pendingSeenAt?: string | null;
   /** Wired across two legs: voltage is checked against twice the mains range. */
   lineToLine?: boolean;
   status: {
@@ -161,6 +169,8 @@ export interface Layout {
 export interface StatusResponse {
   version: string;
   pollIntervalMs: number;
+  /** True while Zeus transmits and for 3 s after: outputs can't be switched. */
+  txLocked?: boolean;
   devices: DeviceView[];
   scenes: Scene[];
   layout?: Layout | null;
@@ -254,7 +264,7 @@ export interface DiscoveryView {
     total: number;
     networks: string[];
     usedMdns: boolean;
-    found: { device: FoundDevice; added: boolean; addressUpdatedFrom?: string | null }[];
+    found: { device: FoundDevice; added: boolean; addressUpdatedFrom?: string | null; needsConfirmation?: boolean }[];
     startedAt?: string | null;
     finishedAt?: string | null;
     cancelled: boolean;
@@ -404,10 +414,14 @@ export function createClient(api: ZeusPluginApi) {
     ) => call<DeviceView>("PATCH", `/devices/${id(deviceId)}`, patch),
     removeDevice: (deviceId: string) => call<{ removed: string }>("DELETE", `/devices/${id(deviceId)}`),
     refresh: (deviceId: string) => call<DeviceView>("POST", `/devices/${id(deviceId)}/refresh`),
+    /** Use the new address a device with a password was seen at. */
+    confirmMove: (deviceId: string) => call<DeviceView>("POST", `/devices/${id(deviceId)}/move`),
+    /** Keep the saved address; the new one isn't offered again. */
+    ignoreMove: (deviceId: string) => call<DeviceView>("DELETE", `/devices/${id(deviceId)}/move`),
     command: (deviceId: string, channel: ChannelState, command: ChannelCommand) =>
       call<DeviceView>(
         "POST",
-        `/devices/${id(deviceId)}/channels/${channel.kind.toLowerCase()}/${channel.index}`,
+        `/devices/${id(deviceId)}/channels/${encodeURIComponent(channel.kind.toLowerCase())}/${encodeURIComponent(String(channel.index))}`,
         command,
       ),
   };

@@ -39,6 +39,8 @@ public sealed class FakeShellyGen2 : IAsyncDisposable
     public List<FakeColor> Colors { get; } = [];
     public bool ColorHasWhite { get; set; }
     public List<JsonObject> Calls { get; } = [];
+    /// <summary>Runs as each RPC arrives (method name), before it is handled.</summary>
+    public Action<string>? OnCall { get; set; }
     public int ChallengesIssued { get; private set; }
     public string Host { get; private set; } = "";
 
@@ -112,6 +114,7 @@ public sealed class FakeShellyGen2 : IAsyncDisposable
         var body = await new StreamReader(http.Request.Body).ReadToEndAsync();
         var frame = JsonNode.Parse(body)!.AsObject();
         lock (_lock) Calls.Add(frame);
+        OnCall?.Invoke(frame["method"]?.GetValue<string>() ?? "");
 
         if (Password is not null && !IsAuthorized(http.Request.Headers.Authorization.ToString(), out var stale))
         {

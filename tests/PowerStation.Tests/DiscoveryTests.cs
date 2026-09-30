@@ -74,6 +74,27 @@ public static class MdnsTests
     }
 
     [Test]
+    public static void DropsAnswersPointingOffTheLocalNetwork()
+    {
+        const string instance = "shelly1g4-7c2c6771eea0._shelly._tcp.local";
+        var packet = MdnsPacket.Response(
+            ("_shelly._tcp.local", 12, MdnsPacket.Name(instance)),
+            (instance, 33, MdnsPacket.Srv("shelly1g4-7c2c6771eea0.local")),
+            ("shelly1g4-7c2c6771eea0.local", 1, [8, 8, 8, 8]));
+        Assert.Equal(0, ShellyMdns.ParseResponse(packet, IPAddress.Parse("192.168.1.30")).Count, "A record on the Internet dropped");
+        KQ4WLR.PowerStation.Shelly.HostValidator.AllowLoopback = false;
+        try
+        {
+            var loop = MdnsPacket.Response(
+                ("_shelly._tcp.local", 12, MdnsPacket.Name(instance)),
+                (instance, 33, MdnsPacket.Srv("shelly1g4-7c2c6771eea0.local")),
+                ("shelly1g4-7c2c6771eea0.local", 1, [127, 0, 0, 1]));
+            Assert.Equal(0, ShellyMdns.ParseResponse(loop, IPAddress.Parse("192.168.1.30")).Count, "A record on loopback dropped");
+        }
+        finally { KQ4WLR.PowerStation.Shelly.HostValidator.AllowLoopback = true; }
+    }
+
+    [Test]
     public static void FollowsNameCompressionPointers()
     {
         // PTR data points back at the "_shelly._tcp.local" name in the answer header (offset 12).
@@ -276,6 +297,87 @@ public static class DiscoveryTests
         Assert.Equal("Online", device["status"]!["health"]!.GetValue<string>(), "back online");
         Assert.Equal($"127.0.0.4:{port}", device["previousHost"]!.GetValue<string>(), "old address remembered");
         Assert.Equal("Antenna Genius Power", device["displayName"]!.GetValue<string>(), "name kept");
+    }
+
+    private static async Task<JsonNode> WaitForDevice(PluginHost host, Func<JsonNode, bool> done)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(20);
+        JsonNode device = null!;
+        while (DateTime.UtcNow < deadline)
+        {
+            var (_, status) = await host.SendAsync(HttpMethod.Get, "status");
+            device = status!["devices"]![0]!;
+            if (done(device)) return device;
+            await Task.Delay(200);
+        }
+        return device;
+    }
+
+    private static async Task<PluginHost> FastRefindHost()
+    {
+        var context = new FakePluginContext();
+        await context.Settings.SetAsync("options.v1", """{"pollIntervalMs":500,"refindAfterFailures":1,"refindCooldownMs":1000}""");
+        return await PluginHost.StartAsync(context, new PowerStationPlugin { UseMdns = false });
+    }
+
+    [Test]
+    public static async Task DeviceWithAPasswordWaitsForTheOperatorToConfirmANewAddress()
+    {
+        var port = FreePort();
+        const string id = "shellyplus1-7c2c6771eea1";
+        FakeShellyGen2? before;
+        try { before = await FakeShellyGen2.StartAsync(id, f => { f.Password = "pw"; f.Switches.Add(new FakeShellyGen2.FakeSwitch()); }, url: $"http://127.0.0.10:{port}"); }
+        catch (Exception ex) when (ex is IOException or SocketException or InvalidOperationException) { Console.WriteLine("  SKIP  can't bind 127.0.0.10"); return; }
+
+        await using var host = await FastRefindHost();
+        var (added, body) = await host.SendAsync(HttpMethod.Post, "devices", new { host = $"127.0.0.10:{port}", password = "pw" });
+        Assert.Equal(HttpStatusCode.OK, added, $"added: {body?.ToJsonString()}");
+
+        await before.DisposeAsync();
+        await using var after = await FakeShellyGen2.StartAsync(id, f => { f.Password = "pw"; f.Switches.Add(new FakeShellyGen2.FakeSwitch()); }, url: $"http://127.0.0.11:{port}");
+
+        var device = await WaitForDevice(host, d => d["pendingHost"] is not null);
+        Assert.Equal($"127.0.0.11:{port}", device["pendingHost"]?.GetValue<string>(), "new address offered");
+        Assert.Equal($"127.0.0.10:{port}", device["host"]!.GetValue<string>(), "not moved on its own");
+        await Task.Delay(1500);
+        Assert.Equal(0, after.Calls.Count, "no RPC (and so no digest login) sent to the new address before confirming");
+
+        var (confirmed, moved) = await host.SendAsync(HttpMethod.Post, $"devices/{id}/move");
+        Assert.Equal(HttpStatusCode.OK, confirmed, $"confirm: {moved?.ToJsonString()}");
+        Assert.Equal($"127.0.0.11:{port}", moved!["host"]!.GetValue<string>(), "moved after confirming");
+        Assert.Equal("Online", moved["status"]!["health"]!.GetValue<string>(), "online at the new address");
+        Assert.True(moved["pendingHost"] is null, "nothing left to confirm");
+    }
+
+    [Test]
+    public static async Task Gen1PasswordIsNeverSentToAnUnconfirmedAddressAndIgnoreSticks()
+    {
+        var port = FreePort();
+        FakeShellyGen1? before;
+        try { before = await FakeShellyGen1.StartAsync("SHSW-1", f => { f.Password = "gen1-pw"; f.Relays.Add(new FakeShellyGen1.Relay()); }, url: $"http://127.0.0.12:{port}"); }
+        catch (Exception ex) when (ex is IOException or SocketException or InvalidOperationException) { Console.WriteLine("  SKIP  can't bind 127.0.0.12"); return; }
+        var id = before.DeviceId;
+
+        await using var host = await FastRefindHost();
+        var (added, body) = await host.SendAsync(HttpMethod.Post, "devices", new { host = $"127.0.0.12:{port}", password = "gen1-pw" });
+        Assert.Equal(HttpStatusCode.OK, added, $"added: {body?.ToJsonString()}");
+
+        await before.DisposeAsync();
+        await using var impostor = await FakeShellyGen1.StartAsync("SHSW-1", f => { f.Password = "other"; f.Relays.Add(new FakeShellyGen1.Relay()); }, url: $"http://127.0.0.13:{port}");
+
+        var device = await WaitForDevice(host, d => d["pendingHost"] is not null);
+        Assert.Equal($"127.0.0.13:{port}", device["pendingHost"]?.GetValue<string>(), "offered, not moved");
+        await Task.Delay(1500);
+        Assert.Equal(0, impostor.AuthHeaders.Count, "the Basic-auth password never went to the new address");
+        Assert.Equal(0, impostor.Requests.Count, "only the unauthenticated /shelly identify was sent");
+
+        var (ignored, view) = await host.SendAsync(HttpMethod.Delete, $"devices/{id}/move");
+        Assert.Equal(HttpStatusCode.OK, ignored, "ignore");
+        Assert.True(view!["pendingHost"] is null, "cleared");
+        await Task.Delay(3000);
+        var (_, status) = await host.SendAsync(HttpMethod.Get, "status");
+        Assert.True(status!["devices"]![0]!["pendingHost"] is null, "an ignored address isn't offered again");
+        Assert.Equal(0, impostor.AuthHeaders.Count, "still no password sent");
     }
 
     [Test]

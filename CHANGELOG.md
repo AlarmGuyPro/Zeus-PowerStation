@@ -2,6 +2,23 @@
 
 All versions by KQ4WLR. Newest first.
 
+## 1.1.0 (2026-09-30)
+Changes from the Zeus catalog review (KB2UKA).
+- TX interlock: nothing switches during TX or for 3 seconds after unkey,
+  except the on-air light rule. Rules that wait for TX are released only
+  after that, and each checks again just before acting. Buttons and scenes
+  are refused (HTTP 409) with a message; a scene stops partway if the radio
+  keys. Zeus-close rules wait out the settle time within the shutdown budget.
+- Re-finding a device: every address found by mDNS or a sweep must be on the
+  local network. A device with a password is no longer moved automatically;
+  its card asks you to confirm the new address, and its password (Gen1 Basic
+  auth or Gen2 digest) isn't sent there until you do. Ignore keeps the old
+  address and doesn't offer that one again.
+- Loopback addresses (127.x, ::1) are refused.
+- Panel: a notice while transmitting; channel paths are URL-encoded.
+- Build: the browser module is built to ui/dist; zeus-build.json and a pinned
+  global.json for the catalog's rebuild-from-source check.
+
 ## 1.0.0 (2026-09-29)
 - First catalog release.
 - Debug log is off by default. Turn it on in Setup › Debug when you need a

@@ -289,6 +289,11 @@ function FoundRow({
         {found.addressUpdatedFrom && (
           <div className={c("hint")}>Address updated from {found.addressUpdatedFrom}.</div>
         )}
+        {found.needsConfirmation && (
+          <div className={c("hint")}>
+            Already added at another address. It has a password, so confirm the new address on its card first.
+          </div>
+        )}
       </div>
       <div className={c("row")}>
         {added ? (

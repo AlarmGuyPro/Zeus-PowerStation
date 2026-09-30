@@ -4,6 +4,28 @@ What was decided with the operator (KQ4WLR) and the reasons, newest first.
 Kept in step with the project notes. For how to build and release, see
 [HANDOFF.md](HANDOFF.md).
 
+## 1.1.0 catalog review fixes (2026-09-30)
+From KB2UKA's review of the 1.0.0 listing PR.
+- TX interlock (`TxInterlock`): outputs locked while MOX is on and for 3 s
+  after unkey (CW break-in and VOX gaps). One shared check used by manual
+  commands (409), scene runs (409, and per output so a scene stops partway),
+  and rules (queued; released by the clock only after the settle time, and
+  re-checked when the rule actually runs). The on-air light rule is the only
+  exception. Safety-timer renewals still run during TX: they don't change an
+  output's state, and stopping them could let a device switch an amplifier
+  off mid-transmission. Zeus-close rules wait out the settle time within the
+  shutdown budget, or leave outputs alone if Zeus closes while keyed.
+- Re-find: found addresses must be local IPs (mDNS A records filtered at
+  parse time and again before probing). Devices with a stored password
+  (Gen1 Basic, Gen2 HA1) are never moved automatically; the move waits on the
+  card for the operator (Use / Ignore). An ignored address isn't offered
+  again this session. Devices without a password still move automatically.
+- Loopback is refused; only the test suite enables it
+  (`HostValidator.AllowLoopback`).
+- Build: UI bundle moved to ui/dist; zeus-build.json, global.json (SDK
+  10.0.112, no roll-forward) and NuGet lock files for the catalog's
+  rebuild-from-source check.
+
 ## 1.0.0 catalog release (2026-09-29)
 - Version 1.0.0 is the first submission to the Zeus community catalog.
 - Debug log off by default; operators turn it on in Setup › Debug when asked

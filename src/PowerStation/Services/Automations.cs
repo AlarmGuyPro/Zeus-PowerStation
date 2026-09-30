@@ -213,6 +213,17 @@ public sealed class AutomationService : IAsyncDisposable
         Rule[] stops;
         lock (_lock) stops = _paused ? [] : _rules.Where(r => r.Enabled && r.Trigger.Type == "zeusStop").ToArray();
         if (stops.Length == 0) return;
+        // Zeus normally unkeys before closing. If it's still inside the TX
+        // settle time, wait for it within the budget; if it's still keyed,
+        // leave the outputs alone (safety timers cover them).
+        var waitUntil = _time.GetUtcNow() + budget - TimeSpan.FromSeconds(1);
+        while (_devices.Tx.Blocked && _time.GetUtcNow() < waitUntil)
+            await Task.Delay(TimeSpan.FromMilliseconds(100), _time).ConfigureAwait(false);
+        if (_devices.Tx.Blocked)
+        {
+            _logger.LogWarning("PowerStation: Zeus closed while transmitting; the Zeus-close rules didn't switch anything");
+            return;
+        }
         using var cts = new CancellationTokenSource(budget);
         try
         {
@@ -251,19 +262,23 @@ public sealed class AutomationService : IAsyncDisposable
 
     private void OnMox(bool keyed)
     {
-        List<(string RuleId, string Text, Func<Task> Run)>? flush = null;
+        lock (_lock) _mox = keyed;
+        NoteActivity();
+        // Rules that waited for TX are released by Tick once the interlock's
+        // settle time has passed, not the moment MOX drops.
+    }
+
+    /// <summary>Starts rules that waited for TX, if the radio has been quiet long enough.</summary>
+    private void ReleaseTxQueue()
+    {
+        List<(string RuleId, string Text, Func<Task> Run)> flush;
         lock (_lock)
         {
-            _mox = keyed;
-            if (!keyed && _txQueue.Count > 0)
-            {
-                flush = [.. _txQueue];
-                _txQueue.Clear();
-            }
+            if (_txQueue.Count == 0 || _devices.Tx.Blocked) return;
+            flush = [.. _txQueue];
+            _txQueue.Clear();
         }
-        NoteActivity();
-        if (flush is not null)
-            foreach (var item in flush) Track(item.Run());
+        foreach (var item in flush) Track(item.Run());
     }
 
     /// <summary>
@@ -329,6 +344,7 @@ public sealed class AutomationService : IAsyncDisposable
 
     internal void Tick()
     {
+        ReleaseTxQueue();
         var fire = new List<(Rule Rule, RuleAction Action, string Why, bool IsEnd)>();
         lock (_lock)
         {
@@ -462,18 +478,23 @@ public sealed class AutomationService : IAsyncDisposable
     /// <summary>Runs an action now, or when TX ends (everything except the on-air light waits for RX).</summary>
     private void Fire(Rule rule, RuleAction action, string why, bool isEnd)
     {
-        var run = () => ExecuteAsync(rule, action, why, isEnd, CancellationToken.None);
+        if (rule.Trigger.Type != "tx" && _devices.Tx.Blocked)
+        {
+            Defer(rule, action, why, isEnd);
+            return;
+        }
+        Track(ExecuteAsync(rule, action, why, isEnd, CancellationToken.None));
+    }
+
+    /// <summary>Holds a rule's action until TX has ended and the radio has settled.</summary>
+    private void Defer(Rule rule, RuleAction action, string why, bool isEnd)
+    {
         lock (_lock)
         {
-            if (_mox && rule.Trigger.Type != "tx")
-            {
-                _txQueue.RemoveAll(q => q.RuleId == rule.Id);
-                _txQueue.Add((rule.Id, $"{rule.Name} ({why})", run));
-                Log(_time.GetUtcNow(), $"{rule.Name}: waiting for TX to end", true);
-                return;
-            }
+            _txQueue.RemoveAll(q => q.RuleId == rule.Id);
+            _txQueue.Add((rule.Id, $"{rule.Name} ({why})", () => ExecuteAsync(rule, action, why, isEnd, CancellationToken.None)));
+            Log(_time.GetUtcNow(), $"{rule.Name}: waiting for TX to end", true);
         }
-        Track(run());
     }
 
     private void Track(Task task)
@@ -500,6 +521,13 @@ public sealed class AutomationService : IAsyncDisposable
         bool ok;
         try
         {
+            // Checked again here, after waiting for any earlier rule: the
+            // radio may have keyed since the rule was started or released.
+            if (rule.Trigger.Type != "tx" && _devices.Tx.Blocked)
+            {
+                Defer(rule, action, why, isEnd);
+                return;
+            }
             (ok, text) = await PerformAsync(rule, action, isEnd, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is PowerStationRequestException or Shelly.ShellyException)
@@ -590,7 +618,8 @@ public sealed class AutomationService : IAsyncDisposable
                     White = action.On == true ? action.White : null,
                 };
                 if (!isEnd) Remember(rule, [target]);
-                var (results, _) = await _devices.ApplyTargetsAsync([target], action.RampSeconds, ct).ConfigureAwait(false);
+                var (results, _) = await _devices.ApplyTargetsAsync([target], action.RampSeconds, ct,
+                    allowDuringTx: rule.Trigger.Type == "tx").ConfigureAwait(false);
                 var name = _devices.GetChannel(target.DeviceId, target.ChannelKey)?.Name ?? _devices.DisplayName(target.DeviceId);
                 var r = results[0];
                 if (!r.Ok) return (false, r.Error ?? "failed");

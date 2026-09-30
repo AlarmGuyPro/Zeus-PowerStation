@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "dotnet": {
+    "project": "src/PowerStation/KQ4WLR.PowerStation.csproj",
+    "configuration": "Release"
+  },
+  "node": [
+    {
+      "directory": "ui",
+      "script": "build"
+    }
+  ],
+  "package": {
+    "plugin.json": "src/PowerStation/plugin.json",
+    "README.md": "src/PowerStation/README.md",
+    "LICENSE": "LICENSE",
+    "THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
+    "ui/powerstation.js": "ui/dist/powerstation.js"
+  }
+}

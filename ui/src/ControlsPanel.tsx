@@ -57,6 +57,11 @@ export function StatusView({
   return (
     <>
       {error && <Notice tone="warn">Lost contact with PowerStation. Showing the last known state.</Notice>}
+      {data.txLocked && (
+        <p className={c("notice", "notice--warn")} role="status">
+          Transmitting. Outputs are locked until 3 seconds after TX ends; rules that are due will wait. The on-air light still follows TX.
+        </p>
+      )}
       <MainsBanner status={status} />
       <ScenesStrip client={client} status={status} />
       {arranging && (
@@ -85,6 +90,54 @@ export function StatusView({
         />
       </section>
     </>
+  );
+}
+
+/**
+ * A device with a password answered at a new address. Its password is only
+ * sent there once the operator says this really is their device.
+ */
+function PendingMove({
+  device,
+  client,
+  onUpdate,
+}: {
+  device: DeviceView;
+  client: PowerStationClient;
+  onUpdate: (d: DeviceView) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  async function act(confirm: boolean) {
+    setBusy(true);
+    setProblem(null);
+    try {
+      onUpdate(confirm ? await client.confirmMove(device.deviceId) : await client.ignoreMove(device.deviceId));
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className={c("notice", "notice--warn")} role="status">
+      <p style={{ margin: "0 0 6px" }}>
+        <strong>New address found: {device.pendingHost}</strong>
+        <br />
+        This device stopped answering at {device.host}, and something at {device.pendingHost} says it's the same device.
+        It has a password, so PowerStation won't send the password there until you confirm. If you don't recognise
+        this address, choose Ignore.
+      </p>
+      {problem && <p className={c("hint")} style={{ margin: "0 0 6px" }}>{problem}</p>}
+      <div className={c("row")}>
+        <button type="button" className={c("button", "button--small", "button--primary")} disabled={busy} onClick={() => act(true)}>
+          Use {device.pendingHost}
+        </button>
+        <button type="button" className={c("button", "button--small")} disabled={busy} onClick={() => act(false)}>
+          Ignore
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -158,6 +211,9 @@ function DeviceCard({
               Found at a new address, {device.host} (was {device.previousHost}).
             </p>
           )}
+        {device.pendingHost && (
+          <PendingMove device={device} client={client} onUpdate={onUpdate} />
+        )}
         {actionError && <Notice tone="error">{actionError}</Notice>}
         {channels.length === 0 && online && (
           <p className={c("hint")}>This device has no relay or dimmer outputs PowerStation can control.</p>

@@ -25,6 +25,17 @@ Rules
 - [ ] Zeus start rule with delay; Zeus close rule on a normal shutdown.
 - [ ] Nothing but the on-air light switches while transmitting.
 
+TX interlock (1.1.0)
+- [ ] Key up (a short tune or MOX) and press an output button: it's refused with "Zeus is transmitting…", and the panel shows the Transmitting notice.
+- [ ] Run a scene while keyed: refused. Unkey and wait 3 s: it works.
+- [ ] A band rule that comes due during TX runs about 3 s after the last unkey, not between CW words or VOX gaps.
+- [ ] The on-air light still follows TX.
+
+New address for a device with a password (1.1.0)
+- [ ] Give a password-protected device a new DHCP address (or change its reservation): its card shows "New address found" and it is not moved on its own.
+- [ ] Use: the device comes back online at the new address.
+- [ ] Ignore: the notice goes away and the device keeps its old address.
+
 Colour lights (Plus RGBW PM)
 - [ ] Colour, level and white respond within about half a second; presets and custom colour.
 - [ ] RGB mode (no white slider) and Light mode (four dimmers).

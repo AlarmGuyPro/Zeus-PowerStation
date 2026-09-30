@@ -125,6 +125,8 @@ internal static class PowerStationEndpoints
             {
                 version,
                 pollIntervalMs = m.Options.PollIntervalMs,
+                // Outputs are locked while transmitting and for 3 s after.
+                txLocked = m.Tx.Blocked,
                 devices = m.List(),
                 scenes = m.Scenes.List(),
                 layout = m.Layout,
@@ -198,6 +200,13 @@ internal static class PowerStationEndpoints
             await m.RemoveAsync(id, ct).ConfigureAwait(false);
             return new { removed = id };
         }));
+
+        // A device with a password seen at a new address: the operator confirms or ignores the move.
+        endpoints.MapPost("devices/{id}/move", (HttpContext http, string id) =>
+            Run(http, manager, async (m, ct) => await m.ConfirmMoveAsync(id, ct).ConfigureAwait(false)));
+
+        endpoints.MapDelete("devices/{id}/move", (HttpContext http, string id) =>
+            Run(http, manager, (m, _) => Task.FromResult<object?>(m.IgnoreMove(id))));
 
         endpoints.MapPost("devices/{id}/refresh", (HttpContext http, string id) =>
             Run(http, manager, async (m, ct) => await m.RefreshAsync(id, ct).ConfigureAwait(false)));

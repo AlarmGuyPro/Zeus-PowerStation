@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "kq4wlr.powerstation": {
+        "type": "Project",
+        "dependencies": {
+          "Zeussdr.Zeus.Plugins.Contracts": "[1.5.0, )"
+        }
+      },
+      "Zeussdr.Zeus.Plugins.Contracts": {
+        "type": "Project"
+      }
+    }
+  }
+}

@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using KQ4WLR.PowerStation.Discovery;
+using KQ4WLR.PowerStation.Shelly;
 using Microsoft.Extensions.Logging;
 
 namespace KQ4WLR.PowerStation.Services;
@@ -24,6 +25,8 @@ public sealed record FoundView
     public required FoundDevice Device { get; init; }
     public bool Added { get; init; }
     public string? AddressUpdatedFrom { get; init; }
+    /// <summary>An added device with a password seen at a new address; the operator confirms the move on the device.</summary>
+    public bool NeedsConfirmation { get; init; }
 }
 
 public sealed record ScanState
@@ -177,7 +180,7 @@ public sealed class DiscoveryService : IAsyncDisposable
             if (mdns)
             {
                 var hits = await ShellyMdns.DiscoverAsync(TimeSpan.FromMilliseconds(1500), ct).ConfigureAwait(false);
-                await Task.WhenAll(hits.Select(async h =>
+                await Task.WhenAll(hits.Where(h => HostValidator.IsLocal(h.Address)).Select(async h =>
                 {
                     var d = await _scanner.ProbeAsync(_scanner.HostFor(h.Address), "mdns", ct).ConfigureAwait(false);
                     if (d is not null) await RecordFoundAsync(d, ct).ConfigureAwait(false);
@@ -208,8 +211,13 @@ public sealed class DiscoveryService : IAsyncDisposable
     private async Task RecordFoundAsync(FoundDevice device, CancellationToken ct)
     {
         string? movedFrom = null;
+        var needsConfirmation = false;
         if (_devices.Contains(device.DeviceId))
-            movedFrom = await _devices.RelocateIfMovedAsync(device.DeviceId, device.Host, "scan", ct).ConfigureAwait(false);
+        {
+            var (outcome, oldHost) = await _devices.RelocateIfMovedAsync(device.DeviceId, device.Host, "scan", ct).ConfigureAwait(false);
+            movedFrom = oldHost;
+            needsConfirmation = outcome == RelocateOutcome.NeedsConfirmation;
+        }
         lock (_lock)
         {
             if (_found.TryGetValue(device.DeviceId, out var existing))
@@ -219,6 +227,7 @@ public sealed class DiscoveryService : IAsyncDisposable
                 {
                     Device = existing.Device with { FoundBy = by },
                     AddressUpdatedFrom = existing.AddressUpdatedFrom ?? movedFrom,
+                    NeedsConfirmation = existing.NeedsConfirmation || needsConfirmation,
                 };
             }
             else
@@ -228,6 +237,7 @@ public sealed class DiscoveryService : IAsyncDisposable
                     Device = device,
                     Added = _devices.Contains(device.DeviceId),
                     AddressUpdatedFrom = movedFrom,
+                    NeedsConfirmation = needsConfirmation,
                 };
             }
             _scan = _scan with { Found = SortedFound() };
@@ -276,11 +286,12 @@ public sealed class DiscoveryService : IAsyncDisposable
             if (_useMdns)
             {
                 var hits = await ShellyMdns.DiscoverAsync(TimeSpan.FromMilliseconds(1500), ct).ConfigureAwait(false);
-                foreach (var h in hits)
+                // Only addresses on the local network are even asked who they are.
+                foreach (var h in hits.Where(h => HostValidator.IsLocal(h.Address)))
                 {
                     var d = await _scanner.ProbeAsync(_scanner.HostFor(h.Address), "mdns", ct).ConfigureAwait(false);
                     if (d is not null && missing.Contains(d.DeviceId) &&
-                        await _devices.RelocateIfMovedAsync(d.DeviceId, d.Host, "mDNS", ct).ConfigureAwait(false) is not null)
+                        (await _devices.RelocateIfMovedAsync(d.DeviceId, d.Host, "mDNS", ct).ConfigureAwait(false)).Outcome == RelocateOutcome.Moved)
                         missing.Remove(d.DeviceId);
                 }
             }
@@ -304,8 +315,10 @@ public sealed class DiscoveryService : IAsyncDisposable
                 await scanner.SweepAsync(addresses, async d =>
                 {
                     lock (missing) if (!missing.Contains(d.DeviceId)) return;
-                    var moved = await _devices.RelocateIfMovedAsync(d.DeviceId, d.Host, "network sweep", ct).ConfigureAwait(false);
-                    if (moved is null) return;
+                    // A device with a password waits for the operator; keep it on the
+                    // missing list so the usual back-off applies.
+                    var (outcome, _) = await _devices.RelocateIfMovedAsync(d.DeviceId, d.Host, "network sweep", ct).ConfigureAwait(false);
+                    if (outcome != RelocateOutcome.Moved) return;
                     lock (missing)
                     {
                         missing.Remove(d.DeviceId);

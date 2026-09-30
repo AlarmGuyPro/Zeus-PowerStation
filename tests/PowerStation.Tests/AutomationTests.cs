@@ -32,10 +32,11 @@ internal sealed class Rig : IAsyncDisposable
         var time = new ManualTime(start ?? new DateTimeOffset(2026, 9, 28, 12, 0, 0, TimeSpan.Zero));
         var settings = new MemorySettings();
         var http = KQ4WLR.PowerStation.PowerStationPlugin.CreateLanHttpClient();
-        var devices = new DeviceManager(new SettingsDeviceStore(settings), http, NullLogger.Instance, time);
+        var radio = new FakeRadio();
+        var devices = new DeviceManager(new SettingsDeviceStore(settings), http, NullLogger.Instance, time,
+            tx: new TxInterlock(radio, time));
         await devices.LoadAsync(CancellationToken.None);
         await devices.AddAsync(new AddDeviceRequest(fake.Host, "Rack", null), CancellationToken.None);
-        var radio = new FakeRadio();
         var auto = new AutomationService(settings, devices, radio, NullLogger.Instance, time);
         await auto.LoadAsync(CancellationToken.None);
         return new Rig { Fake = fake, Time = time, Radio = radio, Devices = devices, Auto = auto, Http = http };
@@ -121,10 +122,95 @@ public static class AutomationTests
 
         rig.Radio.Key(false);
         await rig.Step();
-        Assert.True(rig.On(Rig.Preamp), "runs when TX ends");
+        Assert.False(rig.On(Rig.Preamp), "still waiting during the settle time after unkey");
         Assert.True(rig.LightOn, "light held between overs");
         await rig.Step(3);
+        Assert.True(rig.On(Rig.Preamp), "runs once the radio has been quiet for 3 s");
         Assert.False(rig.LightOn, "light off after the hold");
+    }
+
+    [Test]
+    public static async Task QueuedRulesWaitAgainIfTheRadioReKeysDuringTheSettleTime()
+    {
+        await using var rig = await Rig.StartAsync();
+        await rig.AddRule("6 m preamp", new RuleTrigger { Type = "band", Bands = ["6m"] },
+            Rig.Output(rig.Id, Rig.Preamp, true), new RuleAction { Type = "off" });
+        rig.Auto.Start(runLoop: false);
+
+        rig.Radio.Key(true);
+        rig.Radio.Tune(50.313);
+        await rig.Step();
+        rig.Radio.Key(false);                 // a gap between CW words
+        await rig.Step(1);
+        rig.Radio.Key(true);                  // keyed again before the settle time ran out
+        await rig.Step(2.5);
+        Assert.False(rig.On(Rig.Preamp), "never switched while keyed");
+        rig.Radio.Key(false);
+        await rig.Step(2);
+        Assert.False(rig.On(Rig.Preamp), "settle time starts again from the last unkey");
+        await rig.Step(1.5);
+        Assert.True(rig.On(Rig.Preamp), "runs after 3 s of quiet");
+    }
+
+    [Test]
+    public static async Task ARuleThatWasWaitingItsTurnChecksTxAgainBeforeSwitching()
+    {
+        await using var rig = await Rig.StartAsync();
+        // Two rules due at the same moment run one after the other. The radio
+        // keys while the first one is switching; the second must not switch.
+        await rig.AddRule("6 m amp off", new RuleTrigger { Type = "band", Bands = ["6m"] },
+            Rig.Output(rig.Id, Rig.Amp, false), new RuleAction { Type = "none" });
+        await rig.AddRule("6 m preamp", new RuleTrigger { Type = "band", Bands = ["6m"] },
+            Rig.Output(rig.Id, Rig.Preamp, true), new RuleAction { Type = "off" });
+        rig.Auto.Start(runLoop: false);
+        rig.Fake.OnCall = m => { if (m == "Switch.Set") rig.Radio.Key(true); };
+        rig.Radio.Tune(50.313);
+        await rig.Step();
+        rig.Fake.OnCall = null;
+        Assert.False(rig.On(Rig.Amp), "the first rule switched before the radio keyed");
+        Assert.False(rig.On(Rig.Preamp), "the second rule didn't switch while keyed");
+        var pending = rig.View()["pending"]!.AsArray();
+        Assert.True(pending.Any(p => p!["waitingForTx"]!.GetValue<bool>()), "it waits in the TX queue instead");
+        rig.Radio.Key(false);
+        await rig.Step(3);
+        Assert.True(rig.On(Rig.Preamp), "and runs after TX");
+    }
+
+    [Test]
+    public static async Task ManualCommandsAndScenesAreRefusedDuringTx()
+    {
+        await using var rig = await Rig.StartAsync();
+        var scene = await rig.Devices.Scenes.CreateAsync(new SceneRequest("Station on", null,
+            [new SceneTarget { DeviceId = rig.Id, Kind = ChannelKind.Switch, Index = Rig.Preamp, On = true }]), CancellationToken.None);
+        rig.Radio.Key(true);
+        var refused = await Assert.ThrowsAsync<PowerStationRequestException>(() =>
+            rig.Devices.CommandAsync(rig.Id, "switch", Rig.Preamp, new ChannelCommand("on", null, null, null), CancellationToken.None));
+        Assert.Equal(409, refused.StatusCode, "manual command 409 while keyed");
+        var sceneRefused = await Assert.ThrowsAsync<PowerStationRequestException>(() =>
+            rig.Devices.Scenes.RunAsync(scene.Id, new SceneRunRequest("apply"), CancellationToken.None));
+        Assert.Equal(409, sceneRefused.StatusCode, "scene 409 while keyed");
+
+        rig.Radio.Key(false);
+        await Assert.ThrowsAsync<PowerStationRequestException>(() =>
+            rig.Devices.CommandAsync(rig.Id, "switch", Rig.Preamp, new ChannelCommand("on", null, null, null), CancellationToken.None));
+        rig.Time.Advance(TimeSpan.FromSeconds(3));
+        await rig.Devices.CommandAsync(rig.Id, "switch", Rig.Preamp, new ChannelCommand("on", null, null, null), CancellationToken.None);
+        Assert.True(rig.On(Rig.Preamp), "allowed 3 s after unkey");
+    }
+
+    [Test]
+    public static async Task ASceneStopsIfTheRadioKeysPartWay()
+    {
+        await using var rig = await Rig.StartAsync();
+        var scene = await rig.Devices.Scenes.CreateAsync(new SceneRequest("Mixed", null,
+            [new SceneTarget { DeviceId = rig.Id, Kind = ChannelKind.Switch, Index = Rig.Amp, On = false },
+             new SceneTarget { DeviceId = rig.Id, Kind = ChannelKind.Switch, Index = Rig.Preamp, On = true }]), CancellationToken.None);
+        rig.Fake.OnCall = m => { if (m == "Switch.Set") rig.Radio.Key(true); };
+        var result = await rig.Devices.Scenes.RunAsync(scene.Id, new SceneRunRequest("apply"), CancellationToken.None);
+        rig.Fake.OnCall = null;
+        Assert.Equal(1, result.Succeeded, "first output changed before the radio keyed");
+        Assert.Equal(1, result.Failed, "second left alone");
+        Assert.False(rig.On(Rig.Preamp), "not switched while keyed");
     }
 
     [Test]

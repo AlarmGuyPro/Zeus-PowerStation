@@ -32,6 +32,8 @@ public sealed class FakeShellyGen1 : IAsyncDisposable
     /// <summary>Plug / 1PM style meters, index-matched to relays or lights.</summary>
     public List<double> MeterPower { get; } = [];
     public List<string> Requests { get; } = [];
+    /// <summary>Authorization headers received, including on /shelly.</summary>
+    public List<string> AuthHeaders { get; } = [];
     public string Host { get; private set; } = "";
 
     public sealed class Relay { public bool On; public string? Name; public int TimerSeconds; public bool Overpower; }
@@ -42,15 +44,21 @@ public sealed class FakeShellyGen1 : IAsyncDisposable
 
     private FakeShellyGen1(WebApplication app) => _app = app;
 
-    public static async Task<FakeShellyGen1> StartAsync(string type, Action<FakeShellyGen1>? configure = null)
+    public static async Task<FakeShellyGen1> StartAsync(string type, Action<FakeShellyGen1>? configure = null, string url = "http://127.0.0.1:0")
     {
         var builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
-        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.WebHost.UseUrls(url);
         var app = builder.Build();
         var fake = new FakeShellyGen1(app) { Type = type };
         configure?.Invoke(fake);
 
+        app.Use(async (h, next) =>
+        {
+            var auth = h.Request.Headers.Authorization.ToString();
+            if (auth.Length > 0) lock (fake._lock) fake.AuthHeaders.Add(auth);
+            await next(h);
+        });
         app.MapGet("/shelly", () => Results.Json(new JsonObject
         {
             ["type"] = fake.Type, ["mac"] = fake.Mac, ["auth"] = fake.Password is not null, ["fw"] = "20230913-114008/v1.14.0-gcb84623",

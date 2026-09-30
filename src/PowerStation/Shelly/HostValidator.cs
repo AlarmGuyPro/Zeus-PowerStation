@@ -8,12 +8,27 @@ namespace KQ4WLR.PowerStation.Shelly;
 /// Validates operator-entered device addresses. PowerStation only talks to
 /// devices on the local network: the address must be a bare host or
 /// host:port (no scheme, path, credentials or query), and every address it
-/// resolves to must be private, link-local or loopback. This keeps the
-/// plugin's HTTP endpoints from being usable to reach arbitrary Internet
-/// hosts.
+/// resolves to must be private or link-local. This keeps the plugin's HTTP
+/// endpoints from being usable to reach arbitrary Internet hosts, or services
+/// on the Zeus computer itself.
 /// </summary>
 internal static class HostValidator
 {
+    /// <summary>
+    /// Loopback addresses are refused. Only the test suite turns this on, to
+    /// talk to its simulated devices; the plugin never sets it.
+    /// </summary>
+    internal static bool AllowLoopback { get; set; }
+
+    /// <summary>
+    /// Checks an address PowerStation found by itself (mDNS or a sweep): it
+    /// must be an IP address, optionally with a port, on the local network.
+    /// </summary>
+    public static bool IsLocalHost(string host) =>
+        Uri.TryCreate("http://" + host, UriKind.Absolute, out var uri) &&
+        IPAddress.TryParse(uri.Host.Trim('[', ']'), out var address) &&
+        IsLocal(address);
+
     public static bool TryNormalize(string? input, out string host, out string? error)
     {
         host = "";
@@ -60,7 +75,7 @@ internal static class HostValidator
     public static bool IsLocal(IPAddress address)
     {
         if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
-        if (IPAddress.IsLoopback(address)) return true;
+        if (IPAddress.IsLoopback(address)) return AllowLoopback;
         if (address.AddressFamily == AddressFamily.InterNetwork)
         {
             var b = address.GetAddressBytes();

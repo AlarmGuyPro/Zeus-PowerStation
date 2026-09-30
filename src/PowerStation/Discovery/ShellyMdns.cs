@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
+using KQ4WLR.PowerStation.Shelly;
 
 namespace KQ4WLR.PowerStation.Discovery;
 
@@ -231,6 +232,9 @@ public static class ShellyMdns
                               instance.EndsWith("._shelly._tcp.local", StringComparison.OrdinalIgnoreCase);
             if (!looksShelly) continue;
             var address = srvTarget.TryGetValue(instance, out var host) && aRecords.TryGetValue(host, out var a) ? a : sender;
+            // An answer can name any address in its A record. Only local-network
+            // addresses are used; anything else is dropped here.
+            if (!HostValidator.IsLocal(address)) continue;
             hits.Add(new MdnsHit(address, instance.Split('.')[0], t));
         }
         return hits;

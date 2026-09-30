@@ -150,6 +150,7 @@ public sealed class SceneManager
     public async Task<SceneRunResult> RunAsync(string id, SceneRunRequest? request, CancellationToken ct)
     {
         var scene = _scenes[IndexOf(id)];
+        _devices.Tx.ThrowIfBlocked();
         var mode = (request?.Mode ?? "apply").Trim().ToLowerInvariant();
         if (mode is not ("apply" or "off"))
             throw new PowerStationRequestException(400, "Mode must be apply or off.");

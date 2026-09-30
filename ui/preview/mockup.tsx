@@ -106,7 +106,9 @@ function exampleDevices(): DeviceView[] {
     },
     {
       deviceId: "ogemray25a-a1b2c3d4e5f6", displayName: "Linear PSU (25A)", name: "Linear PSU (25A)", host: "10.0.30.40",
-      generation: 2, model: "S25A", app: "Ogemray25A", mac: null, authRequired: false, hasCredential: false,
+      generation: 2, model: "S25A", app: "Ogemray25A", mac: null, authRequired: true, hasCredential: true,
+      // Seen at a new address; it has a password, so the move waits for the operator.
+      pendingHost: "10.0.30.57", pendingFoundBy: "network sweep", pendingSeenAt: new Date(Date.now() - 4 * 60000).toISOString(),
       status: { health: "Unreachable", message: "10.0.30.40 didn't answer in time. Check the address and that this computer can reach that network.", channels: [sw(0, "Linear PSU", false, 0)] },
     },
     {
@@ -380,6 +382,8 @@ const eng = {
   snapshots: new Map<string, Snapshot>(),
   pending: [] as AutomationState["pending"],
   txQueue: [] as { ruleId: string; text: string; run: () => void }[],
+  /** Outputs stay locked for 3 s after unkey, like the real TX interlock. */
+  txClearAt: 0,
   log: [] as AutomationState["log"],
 };
 const idleRule = () => state.rules.find((r) => r.enabled && r.trigger.type === "idle");
@@ -449,7 +453,7 @@ function runFor(rule: Rule, a: Action | EndAction, label: string, isEnd = false)
       log(`${rule.name}: ${(e as Error).message}`, false);
     }
   };
-  if (eng.radio.mox && rule.trigger.type !== "tx") {
+  if (txLocked() && rule.trigger.type !== "tx") {
     eng.txQueue.push({ ruleId: rule.id, text: `${rule.name} (${label})`, run: go });
     log(`${rule.name}: waiting for TX to end`);
   } else go();
@@ -512,10 +516,13 @@ function idleTick() {
   if (eng.idleState === "warning" && left <= 0) { eng.idleState = "idle"; runFor(rule, rule.action, "idle"); }
 }
 window.setInterval(idleTick, 500);
+const txLocked = () => eng.radio.mox || Date.now() < eng.txClearAt;
 function flushTx() {
+  if (txLocked()) return;
   const q = eng.txQueue; eng.txQueue = [];
   for (const item of q) item.run();
 }
+const TX_LOCKED = "Zeus is transmitting. PowerStation doesn't switch outputs during TX or for 3 seconds after; try again then.";
 function automationView(): AutomationState {
   const rule = idleRule();
   return clone({
@@ -535,7 +542,10 @@ function automationView(): AutomationState {
 const zeus = {
   tune(mhz: number) { eng.radio.frequencyHz = Math.round(mhz * 1e6); eng.radio.band = bandOf(mhz); activity("tuning"); evaluate(); },
   mode(m: string) { eng.radio.mode = m; activity("mode"); },
-  mox(on: boolean) { eng.radio.mox = on; activity("TX"); evaluate(); if (!on) flushTx(); },
+  mox(on: boolean) {
+    eng.radio.mox = on; activity("TX"); evaluate();
+    if (!on) { eng.txClearAt = Date.now() + 3000; window.setTimeout(flushTx, 3050); }
+  },
   start() {
     log("Zeus started");
     for (const r of state.rules) if (r.enabled && r.trigger.type === "zeusStart") later(`${r.id}:start`, r.delaySeconds, () => runFor(r, r.action, "start"), `${r.name}: in ${r.delaySeconds}s`);
@@ -569,7 +579,7 @@ const api: ZeusPluginApi = {
     const devices = state.devices;
     if (method === "GET" && path === "/status") {
       measure(devices);
-      return json({ version: "0.5.0", pollIntervalMs: 1000, devices: clone(devices), scenes: clone(state.scenes), rules: clone(state.rules),
+      return json({ version: "1.1.0", pollIntervalMs: 1000, txLocked: txLocked(), devices: clone(devices), scenes: clone(state.scenes), rules: clone(state.rules),
         automation: automationView(), readings: clone(rd.view), layout: state.scenario === "empty" ? null : clone(state.layout) });
     }
     if (path === "/readings" && method === "PUT") {
@@ -653,6 +663,7 @@ const api: ZeusPluginApi = {
         state.scenes = scene ? state.scenes.map((x) => (x === scene ? saved : x)) : [...state.scenes, saved];
         return json(saved);
       }
+      if (txLocked()) return fail(TX_LOCKED, 409);
       const mode = body?.mode === "off" ? "off" : "apply";
       const results = scene!.targets.map((tg) => {
         const d = devices.find((x) => x.deviceId === tg.deviceId);
@@ -704,6 +715,15 @@ const api: ZeusPluginApi = {
       return json({ removed: d.deviceId });
     }
     if (rest === "/refresh") return json(d);
+    if (rest === "/move") {
+      if (!d.pendingHost) return fail("There's no new address waiting for this device.", 409);
+      if (method === "POST") {
+        d.previousHost = d.host; d.host = d.pendingHost; d.hostChangedAt = new Date().toISOString();
+        d.status = { health: "Online", channels: d.status.channels.map((c) => ({ ...c })) };
+      }
+      d.pendingHost = null; d.pendingFoundBy = null; d.pendingSeenAt = null;
+      return json(d);
+    }
     if (method === "PATCH") {
       if (body.name !== undefined) { d.name = body.name || null; d.displayName = body.name || d.deviceId; }
       if (body.host) d.host = body.host;
@@ -730,6 +750,7 @@ const api: ZeusPluginApi = {
     const cm = rest.match(/^\/channels\/(switch|light|rgb|rgbw)\/(\d+)$/);
     if (cm) {
       if (d.status.health !== "Online") return json({ error: `${d.host} didn't answer in time.`, kind: "unreachable" }, 504);
+      if (txLocked()) return fail(TX_LOCKED, 409);
       const ch = d.status.channels.find((x) => x.kind.toLowerCase() === cm[1] && x.index === +cm[2])!;
       if (body.action === "on") ch.on = true;
       if (body.action === "off") ch.on = false;
@@ -808,7 +829,7 @@ function App() {
     window.clearInterval(disc.timer);
     disc.scan = { ...disc.scan, running: false, phase: "idle", probed: 0, total: 0, found: [], finishedAt: null, cancelled: false };
     for (const t of eng.timers.values()) window.clearTimeout(t);
-    Object.assign(eng, { paused: false, lastActivity: Date.now(), idleFiresAt: Date.now() + 42 * 60000, idleState: "active", pending: [], txQueue: [], log: [] });
+    Object.assign(eng, { paused: false, lastActivity: Date.now(), idleFiresAt: Date.now() + 42 * 60000, idleState: "active", pending: [], txQueue: [], txClearAt: 0, log: [] });
     eng.radio = { connected: true, frequencyHz: 14.074e6, band: "20m", mode: "DIGU", mox: false };
     eng.active.clear(); eng.timers.clear(); eng.snapshots.clear();
     Object.assign(rd, { mainsV: 121.4, ampOverload: false, psuTripped: false });
