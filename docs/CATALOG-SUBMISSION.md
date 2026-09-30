@@ -12,6 +12,29 @@ If anything here disagrees with that guide, the guide wins.
 - [ ] CI green on Linux, Windows and macOS for the release commit.
 - [ ] Screenshot set current (`tools/screenshots`: dark, light, narrow, 200%, keyboard focus, error and first-run states are in `docs/screenshots`). Retake inside Zeus if the reviewers ask for real-host screenshots.
 
+## Build the ZIP from the release commit
+
+The catalog rebuilds the feature from `source.commit` (zeus-build.json,
+global.json SDK pin) and compares it with the ZIP, and the commit hash is
+stamped into the DLL. So commit first, then build from a clean clone of that
+commit, and don't commit anything else before tagging it:
+
+```sh
+git clone --branch <branch> https://github.com/AlarmGuyPro/Zeus-PowerStation build && cd build
+(cd ui && npm ci --ignore-scripts && npm run build)
+pwsh src/PowerStation/build-package.ps1
+```
+
+Then, from a clone of the catalog repo, run their rebuild check against a
+second fresh clone (Linux; needs bubblewrap):
+
+```sh
+pwsh tools/verify-source-build.ps1 -PackagePath <zip> -SourceDirectory <fresh clone> -OutputDirectory <empty dir>
+dotnet tools/PackageSecurityScan/bin/Release/net10.0/PackageSecurityScan.dll scan --package <zip>
+```
+
+Both reported CLEAR for 1.1.0.
+
 ## Publish the release
 
 1. Tag the exact commit: `git tag v<version> && git push origin v<version>`.
@@ -43,14 +66,19 @@ and edit only `registry.json`. Update the top-level `generated` timestamp.
     "sdkMinVersion": "1.5.0",
     "platforms": ["any"],
     "downloadUrl": "https://github.com/Zeus-SDR/zeus-community-features/releases/download/community-io.github.alarmguypro.powerstation-v<version>/io.github.alarmguypro.powerstation-<version>.zip",
-    "sha256": "<64 lowercase hex>"
+    "sha256": "<64 lowercase hex>",
+    "source": {
+      "repository": "https://github.com/AlarmGuyPro/Zeus-PowerStation",
+      "commit": "<40-character commit the ZIP was built from>",
+      "package": "https://github.com/AlarmGuyPro/Zeus-PowerStation/releases/download/v<version>/io.github.alarmguypro.powerstation-<version>.zip"
+    }
   }]
 }
 ```
 
 The `downloadUrl` is the catalog's custody URL (it 404s until a maintainer
-copies the ZIP). Your own release URL goes in the pull request template, not
-in `registry.json`. `platforms: ["any"]` is right: the package is fully managed.
+copies the ZIP). Your own release URL goes in `source.package` and the pull
+request template, never in `downloadUrl`. `platforms: ["any"]` is right: the package is fully managed.
 
 ## Checks and pull request
 
